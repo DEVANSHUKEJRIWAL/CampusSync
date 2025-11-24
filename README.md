@@ -70,6 +70,7 @@ Create an Auth0 Application and set the following values in the frontend and bac
 const domain = "YOUR_AUTH0_DOMAIN";
 const clientId = "YOUR_CLIENT_ID";
 const audience = "http://localhost:8080";
+
 Backend — backend/cmd/api/main.go:
 
 Go

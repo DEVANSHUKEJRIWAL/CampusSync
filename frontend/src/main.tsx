@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { Auth0Provider } from '@auth0/auth0-react'
 import App from './App.tsx'
 import './index.css'
+import {ToastProvider} from "./context/ToastContext.tsx";
 
 // 👇 REPLACE THESE WITH YOUR ACTUAL VALUES FROM AUTH0 DASHBOARD
 const domain = "cems-terps.us.auth0.com"; // e.g., dev-xyz.us.auth0.com
@@ -19,7 +20,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 audience: audience, // 👈 Crucial: tells Auth0 we want a token for the Go Backend
             }}
         >
-            <App />
+            <ToastProvider>
+                <App />
+            </ToastProvider>
+
         </Auth0Provider>
     </React.StrictMode>,
 )

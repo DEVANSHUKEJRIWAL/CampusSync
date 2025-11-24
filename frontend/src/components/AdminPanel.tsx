@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useToast } from "../context/ToastContext"; // 👈 Import Hook
 
 interface User {
     id: number;
@@ -9,6 +10,7 @@ interface User {
 
 export default function AdminPanel() {
     const { getAccessTokenSilently } = useAuth0();
+    const { showToast } = useToast(); // 👈 Initialize Hook
     const [users, setUsers] = useState<User[]>([]);
 
     useEffect(() => {
@@ -40,24 +42,23 @@ export default function AdminPanel() {
                 body: JSON.stringify({ user_id: userId, role: newRole })
             });
 
-            // 👇 FIX: Check if the backend actually accepted it!
             if (!res.ok) {
                 const errData = await res.json();
-                alert(`❌ Failed: ${errData.message || "Unknown error"}`);
+                showToast(`Failed: ${errData.message || "Unknown error"}`, "error"); // 👈 Replaced alert
                 return;
             }
 
-            alert("✅ Role Updated Successfully!");
+            showToast("Role Updated Successfully!", "success"); // 👈 Replaced alert
             fetchUsers(); // Refresh the list
 
         } catch (error) {
             console.error(error);
-            alert("❌ Network or Permission Error");
+            showToast("Network or Permission Error", "error"); // 👈 Replaced alert
         }
     };
 
     return (
-        <div style={{ marginTop: "20px", padding: "20px", border: "2px solid #333", borderRadius: "8px" }}>
+        <div style={{ marginTop: "20px", padding: "20px", border: "2px solid #333", borderRadius: "8px", backgroundColor: "white" }}>
             <h2>👮 Admin Console</h2>
             <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
                 <thead>

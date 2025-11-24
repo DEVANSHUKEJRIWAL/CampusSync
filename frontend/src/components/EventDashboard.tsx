@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import CalendarView from "./CalendarView"; // 👈 Import the Calendar Component
+import CalendarView from "./CalendarView";
+import { ChevronDownIcon } from '@heroicons/react/20/solid';
+import { useToast } from "../context/ToastContext";
+import "./EventDashboard.css";
 
 interface Event {
     id: number;
@@ -16,11 +19,12 @@ interface Event {
 
 export default function EventDashboard() {
     const { getAccessTokenSilently } = useAuth0();
+    const { showToast } = useToast();
     const [events, setEvents] = useState<Event[]>([]);
     const [loading, setLoading] = useState(true);
     const [myEvents, setMyEvents] = useState<any[]>([]);
 
-    // 👇 NEW: View Mode State (List vs Calendar)
+    // View Mode State
     const [viewMode, setViewMode] = useState<"LIST" | "CALENDAR">("LIST");
 
     // Search State
@@ -33,6 +37,15 @@ export default function EventDashboard() {
 
     // Edit State
     const [editingEventId, setEditingEventId] = useState<number | null>(null);
+
+    // 👇 NEW: Modal States for Cancel & Invite
+    const [pendingCancelId, setPendingCancelId] = useState<number | null>(null);
+    const [pendingInviteId, setPendingInviteId] = useState<number | null>(null);
+    const [inviteEmailInput, setInviteEmailInput] = useState("");
+
+    // Validation State
+    const [formError, setFormError] = useState("");
+    const [formSuccess, setFormSuccess] = useState("");
 
     // Form State
     const [formData, setFormData] = useState({
@@ -110,7 +123,11 @@ export default function EventDashboard() {
             a.href = url;
             a.download = `attendees-${id}.csv`;
             a.click();
-        } catch (e) { console.error(e); }
+            showToast("CSV Downloaded!", "success");
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to download CSV.", "error");
+        }
     };
 
     useEffect(() => {
@@ -131,14 +148,14 @@ export default function EventDashboard() {
             const data = await res.json();
 
             if (!res.ok) {
-                alert(`⚠️ ${data.message || "Error registering"}`);
+                showToast(`⚠️ ${data.message || "Error registering"}`, "error");
                 return;
             }
 
             if (data.status === "REGISTERED") {
-                alert("✅ Success! You are registered.");
+                showToast("✅ Success! You are registered.", "success");
             } else if (data.status === "WAITLISTED") {
-                alert("bf Warning: Event is full. You are on the WAITLIST.");
+                showToast("Event is full. You are on the WAITLIST.", "success");
             }
 
             fetchMyEvents();
@@ -146,36 +163,51 @@ export default function EventDashboard() {
 
         } catch (error: any) {
             console.error("Detailed Error:", error);
-            alert(`Registration failed: ${error.message || error}`);
+            showToast(`Registration failed: ${error.message || error}`, "error");
         }
     };
 
-    const handleCancel = async (eventId: number) => {
-        if (!confirm("Are you sure you want to cancel registration?")) return;
+    // 👇 REFACTORED: Opens Modal instead of confirm()
+    const initiateCancel = (eventId: number) => {
+        setPendingCancelId(eventId);
+    };
+
+    // 👇 NEW: Logic executed when "Yes" is clicked in modal
+    const confirmCancel = async () => {
+        if (!pendingCancelId) return;
 
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch(`http://localhost:8080/api/registrations?event_id=${eventId}`, {
+            const res = await fetch(`http://localhost:8080/api/registrations?event_id=${pendingCancelId}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
 
             if (res.ok) {
-                alert("Registration cancelled.");
+                showToast("Registration cancelled.", "success");
                 fetchMyEvents();
                 fetchEvents();
             } else {
                 const data = await res.json();
-                alert(data.message);
+                showToast(data.message, "error");
             }
         } catch (err) {
             console.error(err);
+            showToast("Cancellation failed.", "error");
+        } finally {
+            setPendingCancelId(null); // Close modal
         }
     };
 
-    const handleInvite = async (eventId: number) => {
-        const email = prompt("Enter the email to invite:");
-        if (!email) return;
+    // 👇 REFACTORED: Opens Modal instead of prompt()
+    const initiateInvite = (eventId: number) => {
+        setPendingInviteId(eventId);
+        setInviteEmailInput("");
+    };
+
+    // 👇 NEW: Logic executed when "Send Invite" is clicked
+    const submitInvite = async () => {
+        if (!pendingInviteId || !inviteEmailInput) return;
 
         try {
             const token = await getAccessTokenSilently();
@@ -185,33 +217,69 @@ export default function EventDashboard() {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ event_id: eventId, email: email }),
+                body: JSON.stringify({ event_id: pendingInviteId, email: inviteEmailInput }),
             });
 
             if (res.ok) {
-                alert("✅ User invited successfully!");
+                showToast("✅ User invited successfully!", "success");
             } else {
-                alert("❌ Failed to invite user.");
+                showToast("❌ Failed to invite user.", "error");
             }
         } catch (err) {
             console.error(err);
-            alert("Error sending invitation.");
+            showToast("Error sending invitation.", "error");
+        } finally {
+            setPendingInviteId(null); // Close modal
         }
+    };
+
+    const handleBulkInvite = async (eventId: number) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.csv';
+
+        input.onchange = async (e: any) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('event_id', eventId.toString());
+            formData.append('file', file);
+
+            try {
+                const token = await getAccessTokenSilently();
+                const res = await fetch("http://localhost:8080/api/events/invite/bulk", {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                    body: formData,
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast(`✅ Success! Processed ${data.count} emails.`, "success");
+                } else {
+                    showToast("❌ Failed to upload.", "error");
+                }
+            } catch (err) {
+                showToast("Upload error.", "error");
+            }
+        };
+
+        input.click();
     };
 
     // --- EDIT LOGIC ---
     const handleEditClick = (evt: Event) => {
         setEditingEventId(evt.id);
+        setFormError("");
+        setFormSuccess("");
 
-        // Format dates for datetime-local input (slice to remove seconds/timezone)
-        // Safely handle if end_time is missing or invalid
         const start = new Date(evt.start_time).toISOString().slice(0, 16);
 
         let end = "";
         if (evt.end_time) {
             end = new Date(evt.end_time).toISOString().slice(0, 16);
         } else {
-            // Default end time to start + 1 hour
             const d = new Date(evt.start_time);
             d.setHours(d.getHours() + 1);
             end = d.toISOString().slice(0, 16);
@@ -227,12 +295,13 @@ export default function EventDashboard() {
             visibility: evt.visibility
         });
 
-        // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const resetForm = () => {
         setEditingEventId(null);
+        setFormError("");
+        setFormSuccess("");
         setFormData({
             title: "",
             description: "",
@@ -246,6 +315,18 @@ export default function EventDashboard() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setFormError("");
+        setFormSuccess("");
+
+        if (new Date(formData.end_time) <= new Date(formData.start_time)) {
+            setFormError("End time must be strictly after start time.");
+            return;
+        }
+        if (formData.capacity <= 0) {
+            setFormError("Capacity must be a positive number.");
+            return;
+        }
+
         try {
             const token = await getAccessTokenSilently();
             const payload = {
@@ -253,7 +334,7 @@ export default function EventDashboard() {
                 capacity: Number(formData.capacity),
                 start_time: new Date(formData.start_time).toISOString(),
                 end_time: new Date(formData.end_time).toISOString(),
-                id: editingEventId // Include ID if editing
+                id: editingEventId
             };
 
             const method = editingEventId ? "PUT" : "POST";
@@ -272,123 +353,130 @@ export default function EventDashboard() {
                 throw new Error(data.message || "Failed to save event");
             }
 
-            alert(editingEventId ? "Event Updated!" : "Event Created!");
+            const msg = editingEventId ? "Event Updated Successfully!" : "Event Created Successfully!";
+            setFormSuccess(msg);
+            showToast(msg, "success");
+
             fetchEvents();
-            resetForm();
+
+            setTimeout(() => {
+                setFormSuccess("");
+                if (!editingEventId) resetForm();
+            }, 3000);
 
         } catch (error: any) {
-            console.error(error);
-            alert(`Error: ${error.message}`);
+            setFormError(error.message);
+            showToast(`Error: ${error.message}`, "error");
         }
     };
 
-    const handleBulkInvite = async (eventId: number) => {
-        // Create a hidden file input dynamically
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.csv';
-
-        input.onchange = async (e: any) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('event_id', eventId.toString());
-            formData.append('file', file);
-
-            try {
-                const token = await getAccessTokenSilently();
-                const res = await fetch("http://localhost:8080/api/events/invite/bulk", {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}` }, // Note: DO NOT set Content-Type for FormData, browser does it automatically
-                    body: formData,
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    alert(`✅ Success! Processed ${data.count} emails.`);
-                } else {
-                    alert("❌ Failed to upload.");
-                }
-            } catch (err) {
-                console.error(err);
-                alert("Upload error.");
-            }
-        };
-
-        input.click(); // Open the file picker dialog
-    };
-
     return (
-        <div style={{ marginTop: "20px", borderTop: "1px solid #ccc", paddingTop: "20px" }}>
-            <h2>📅 Event Dashboard</h2>
-
-            {/* --- CREATE / EDIT FORM --- */}
-            <div style={{ background: "#f9f9f9", padding: "15px", borderRadius: "8px", marginBottom: "20px", border: editingEventId ? "2px solid #ffc107" : "1px solid #ddd" }}>
-                <h3>{editingEventId ? "✏️ Edit Event" : "➕ Create New Event"}</h3>
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "400px" }}>
-                    <input placeholder="Event Title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required />
-                    <textarea placeholder="Description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
-                    <input placeholder="Location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} required />
-
-                    <div style={{ display: "flex", gap: "10px" }}>
-                        <label>Start: <input type="datetime-local" value={formData.start_time} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} required /></label>
-                        <label>End: <input type="datetime-local" value={formData.end_time} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} required /></label>
-                    </div>
-
-                    <input type="number" placeholder="Capacity" value={formData.capacity || ""} onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })} required />
-
-                    <label style={{ display: "flex", flexDirection: "column", fontSize: "14px" }}>
-                        Visibility:
-                        <select
-                            value={formData.visibility}
-                            onChange={(e) => setFormData({ ...formData, visibility: e.target.value })}
-                            style={{ padding: "8px", marginTop: "5px" }}
-                        >
-                            <option value="PUBLIC">Public</option>
-                            <option value="PRIVATE">Private (Invite Only)</option>
-                        </select>
-                    </label>
-
-                    <div style={{ display: "flex", gap: "10px" }}>
-                        <button type="submit" style={{ flex: 1, background: editingEventId ? "#ffc107" : "#007bff", color: editingEventId ? "black" : "white", padding: "10px", border: "none", cursor: "pointer" }}>
-                            {editingEventId ? "Update Event" : "Create Event"}
-                        </button>
-
-                        {editingEventId && (
-                            <button
-                                type="button"
-                                onClick={resetForm}
-                                style={{ background: "#6c757d", color: "white", padding: "10px", border: "none", cursor: "pointer" }}
-                            >
-                                Cancel
-                            </button>
-                        )}
-                    </div>
-                </form>
+        <div className="dashboard-container">
+            <div className="dashboard-header">
+                <h2 style={{fontSize: "24px", fontWeight: "bold"}}>📅 Event Dashboard</h2>
             </div>
 
-            {/* --- MY SCHEDULE --- */}
-            <div style={{ marginBottom: "30px", padding: "20px", background: "#e3f2fd", borderRadius: "8px", border: "1px solid #bbdefb" }}>
-                <h3 style={{ marginTop: 0 }}>🎫 My Schedule</h3>
+            {/* Form */}
+            <form onSubmit={handleSubmit} className={`form-card ${editingEventId ? "editing" : ""}`}>
+                <div className="space-y-12">
+                    {formError && <div className="alert-box alert-error">{formError}</div>}
+                    {formSuccess && <div className="alert-box alert-success">{formSuccess}</div>}
 
+                    <div className="border-b border-white/10 pb-12">
+                        <h2 className="text-base font-semibold text-white">
+                            {editingEventId ? "Edit Event Details" : "Create New Event"}
+                        </h2>
+                        <p className="mt-1 text-sm text-gray-400">
+                            This information will be displayed publicly on the event calendar.
+                        </p>
+
+                        <div className="mt-10 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                            <div className="sm:col-span-4">
+                                <label htmlFor="title" className="block text-sm font-medium text-white">Event Title</label>
+                                <div className="mt-2">
+                                    <input type="text" name="title" id="title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="input-dark" placeholder="e.g. Annual Hackathon" required />
+                                </div>
+                            </div>
+                            <div className="col-span-full">
+                                <label htmlFor="description" className="block text-sm font-medium text-white">Description</label>
+                                <div className="mt-2">
+                                    <textarea name="description" id="description" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="input-dark" placeholder="Write a few sentences about the event." />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="border-b border-white/10 pb-12">
+                        <h2 className="text-base font-semibold text-white">Logistics & Settings</h2>
+                        <p className="mt-1 text-sm text-gray-400">Set the location, time, and capacity constraints.</p>
+
+                        <div className="mt-10 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                            <div className="col-span-full">
+                                <label htmlFor="location" className="block text-sm font-medium text-white">Location / Address</label>
+                                <div className="mt-2">
+                                    <input type="text" name="location" id="location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="input-dark" required />
+                                </div>
+                            </div>
+                            <div className="sm:col-span-3">
+                                <label htmlFor="start-time" className="block text-sm font-medium text-white">Start Time</label>
+                                <div className="mt-2">
+                                    <input type="datetime-local" name="start-time" id="start-time" value={formData.start_time} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} className="input-dark" required />
+                                </div>
+                            </div>
+                            <div className="sm:col-span-3">
+                                <label htmlFor="end-time" className="block text-sm font-medium text-white">End Time</label>
+                                <div className="mt-2">
+                                    <input type="datetime-local" name="end-time" id="end-time" value={formData.end_time} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} className="input-dark" required />
+                                </div>
+                            </div>
+                            <div className="sm:col-span-3">
+                                <label htmlFor="capacity" className="block text-sm font-medium text-white">Capacity</label>
+                                <div className="mt-2">
+                                    <input type="number" name="capacity" id="capacity" value={formData.capacity || ""} onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })} className="input-dark" required />
+                                </div>
+                            </div>
+                            <div className="sm:col-span-3">
+                                <label htmlFor="visibility" className="block text-sm font-medium text-white">Visibility</label>
+                                <div className="mt-2 grid grid-cols-1">
+                                    <div className="select-wrapper">
+                                        <select id="visibility" name="visibility" value={formData.visibility} onChange={(e) => setFormData({ ...formData, visibility: e.target.value })} className="select-dark">
+                                            <option value="PUBLIC">Public</option>
+                                            <option value="PRIVATE">Private (Invite Only)</option>
+                                        </select>
+                                        <ChevronDownIcon aria-hidden="true" className="select-icon" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="form-actions">
+                    {editingEventId && (
+                        <button type="button" onClick={resetForm} className="btn-text">Cancel</button>
+                    )}
+                    <button type="submit" className="btn-submit">
+                        {editingEventId ? "Update Event" : "Create Event"}
+                    </button>
+                </div>
+            </form>
+
+            {/* My Schedule */}
+            <div className="schedule-card">
+                <h3 style={{ marginTop: 0, fontSize: "20px", fontWeight: "bold" }}>🎫 My Schedule</h3>
                 {(!myEvents || myEvents.length === 0) ? (
-                    <p style={{ color: "#666" }}>You haven't registered for any events yet.</p>
+                    <p style={{ color: "gray" }}>You haven't registered for any events yet.</p>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <div>
                         {myEvents.map((e) => (
-                            <div key={e.event_id} style={{ background: "white", padding: "10px", borderRadius: "5px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div key={e.event_id} className="schedule-item">
                                 <div>
                                     <strong>{e.title}</strong>
-                                    <span style={{ color: "#666", fontSize: "14px", marginLeft: "10px" }}>
+                                    <span style={{ color: "gray", fontSize: "13px", marginLeft: "10px" }}>
                                         📅 {new Date(e.start_time).toLocaleString()}
                                     </span>
                                 </div>
-                                <span style={{
-                                    padding: "4px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: "bold",
-                                    background: e.my_status === "REGISTERED" ? "#28a745" : "#ffc107",
-                                    color: e.my_status === "REGISTERED" ? "white" : "black"
-                                }}>
+                                <span className={`badge ${e.my_status === "REGISTERED" ? "badge-public" : "badge-status"}`}>
                                     {e.my_status}
                                 </span>
                             </div>
@@ -397,156 +485,112 @@ export default function EventDashboard() {
                 )}
             </div>
 
-            {/* --- SEARCH BAR & VIEW TOGGLE --- */}
-            <div style={{ marginBottom: "20px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", gap: "10px", flex: 1 }}>
-                    <input
-                        placeholder="🔍 Search title or desc..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ padding: "10px", flex: 1, minWidth: "200px" }}
-                    />
-                    <input
-                        placeholder="📍 Location..."
-                        value={searchLocation}
-                        onChange={(e) => setSearchLocation(e.target.value)}
-                        style={{ padding: "10px", width: "150px" }}
-                    />
-                    <button
-                        onClick={() => fetchEvents(searchQuery, searchLocation)}
-                        style={{ padding: "10px 20px", background: "#333", color: "white", border: "none", cursor: "pointer", borderRadius: "5px" }}
-                    >
-                        Search
-                    </button>
-                    <button
-                        onClick={() => {
-                            setSearchQuery("");
-                            setSearchLocation("");
-                            fetchEvents("", "");
-                        }}
-                        style={{ padding: "10px", background: "#ccc", border: "none", cursor: "pointer", borderRadius: "5px" }}
-                    >
-                        Clear
-                    </button>
+            {/* Search & Toggles */}
+            <div className="action-bar">
+                <div style={{display:'flex', gap:'10px', flex: 1}}>
+                    <input placeholder="🔍 Search title or desc..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{padding:'10px', border:'1px solid #ccc', borderRadius:'4px', flex: 1}} />
+                    <input placeholder="📍 Location..." value={searchLocation} onChange={(e) => setSearchLocation(e.target.value)} style={{padding:'10px', width:'150px', border:'1px solid #ccc', borderRadius:'4px'}} />
+                    <button onClick={() => fetchEvents(searchQuery, searchLocation)} className="btn btn-secondary">Search</button>
+                    <button onClick={() => {setSearchQuery(""); setSearchLocation(""); fetchEvents("", "")}} className="btn btn-secondary">Clear</button>
                 </div>
-
-                {/* 👇 VIEW TOGGLE BUTTONS */}
-                <div style={{ display: "flex" }}>
-                    <button
-                        onClick={() => setViewMode("LIST")}
-                        style={{ padding: '10px 16px', background: viewMode === "LIST" ? '#007bff' : '#e9ecef', color: viewMode === "LIST" ? 'white' : 'black', border: '1px solid #ccc', borderRight: 'none', borderTopLeftRadius: '5px', borderBottomLeftRadius: '5px', cursor: 'pointer' }}
-                    >
-                        List
-                    </button>
-                    <button
-                        onClick={() => setViewMode("CALENDAR")}
-                        style={{ padding: '10px 16px', background: viewMode === "CALENDAR" ? '#007bff' : '#e9ecef', color: viewMode === "CALENDAR" ? 'white' : 'black', border: '1px solid #ccc', borderTopRightRadius: '5px', borderBottomRightRadius: '5px', cursor: 'pointer' }}
-                    >
-                        Calendar
-                    </button>
+                <div>
+                    <button onClick={() => setViewMode("LIST")} className="btn btn-info" style={{marginRight:'5px'}}>List</button>
+                    <button onClick={() => setViewMode("CALENDAR")} className="btn btn-info">Calendar</button>
                 </div>
             </div>
 
-            {/* --- EVENT LIST / CALENDAR VIEW --- */}
-            <h3>Upcoming Events</h3>
+            {/* Views */}
             {loading ? <p>Loading...</p> : (
                 <>
                     {viewMode === "LIST" ? (
-                        // --- LIST VIEW ---
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: "20px" }}>
+                        <div className="event-grid">
                             {events.length === 0 && <p>No events found.</p>}
                             {events.map((evt) => (
-                                <div key={evt.id} style={{ border: "1px solid #ddd", padding: "15px", borderRadius: "8px", position: "relative" }}>
-                                    <h4>{evt.title}</h4>
-                                    <p style={{ fontSize: "14px", color: "#666" }}>📍 {evt.location}</p>
-                                    <p style={{ fontSize: "12px" }}>📅 {new Date(evt.start_time).toLocaleString()}</p>
-                                    <p>Capacity: {evt.capacity}</p>
+                                <div key={evt.id} className="event-card">
+                                    <h4 style={{margin:'0 0 10px 0', fontSize:'18px'}}>{evt.title}</h4>
+                                    <div style={{fontSize:'14px', color:'#555'}}>📍 {evt.location}</div>
+                                    <div style={{fontSize:'14px', color:'#555'}}>📅 {new Date(evt.start_time).toLocaleString()}</div>
 
-                                    <p style={{ fontSize: "12px", fontWeight: "bold", color: evt.visibility === "PRIVATE" ? "red" : "green" }}>
-                                        {evt.visibility === "PRIVATE" ? "🔒 Private" : "🌍 Public"}
-                                    </p>
-
-                                    <div style={{ marginTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                        <span style={{ background: "#e1ecf4", color: "#007bff", padding: "2px 6px", borderRadius: "4px", fontSize: "12px" }}>
-                                            {evt.status}
+                                    <div className="event-badges">
+                                        <span className="badge badge-status">{evt.status}</span>
+                                        <span className={`badge ${evt.visibility === "PRIVATE" ? "badge-private" : "badge-public"}`}>
+                                            {evt.visibility === "PRIVATE" ? "Private" : "Public"}
                                         </span>
+                                    </div>
 
-                                        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                                            <button onClick={() => handleRegister(evt.id)} style={{ background: "#28a745", color: "white", border: "none", padding: "5px 8px", borderRadius: "4px", cursor: "pointer" }}>
-                                                Join
-                                            </button>
-
-                                            <button onClick={() => handleCancel(evt.id)} style={{ background: "#dc3545", color: "white", border: "none", padding: "5px 8px", borderRadius: "4px", cursor: "pointer" }}>
-                                                Cancel
-                                            </button>
-
-                                            <button onClick={() => handleInvite(evt.id)} style={{ background: "#6c757d", color: "white", border: "none", padding: "5px 8px", borderRadius: "4px", cursor: "pointer" }}>
-                                                Invite
-                                            </button>
-
-                                            <button
-                                                onClick={() => handleBulkInvite(evt.id)}
-                                                style={{ background: "#6610f2", color: "white", border: "none", padding: "5px 8px", borderRadius: "4px", cursor: "pointer" }}
-                                            >
-                                                Bulk CSV
-                                            </button>
-
-                                            <button onClick={() => fetchAttendees(evt.id)} style={{ background: "#17a2b8", color: "white", border: "none", padding: "5px 8px", borderRadius: "4px", cursor: "pointer" }}>
-                                                Manage
-                                            </button>
-
-                                            <button onClick={() => handleEditClick(evt)} style={{ background: "#ffc107", color: "black", border: "none", padding: "5px 8px", borderRadius: "4px", cursor: "pointer" }}>
-                                                Edit
-                                            </button>
-                                        </div>
+                                    <div className="card-actions">
+                                        <button onClick={() => handleRegister(evt.id)} className="btn btn-success">Join</button>
+                                        <button onClick={() => initiateCancel(evt.id)} className="btn btn-danger">Cancel</button>
+                                        <button onClick={() => initiateInvite(evt.id)} className="btn btn-secondary">Invite</button>
+                                        <button onClick={() => handleBulkInvite(evt.id)} className="btn btn-secondary">CSV</button>
+                                        <button onClick={() => fetchAttendees(evt.id)} className="btn btn-info">Manage</button>
+                                        <button onClick={() => handleEditClick(evt)} className="btn btn-warning">Edit</button>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        // --- 👇 NEW: CALENDAR VIEW COMPONENT ---
                         <CalendarView
                             events={events}
-                            onEventClick={(evt) => {
-                                if(confirm(`Edit event "${evt.title}"?`)) {
-                                    handleEditClick(evt);
-                                }
-                            }}
+                            onEventClick={(evt) => { if(confirm(`Edit event "${evt.title}"?`)) handleEditClick(evt); }}
                         />
                     )}
                 </>
             )}
 
-            {/* --- MANAGE ATTENDEES MODAL --- */}
+            {/* --- ATTENDEE MODAL --- */}
             {selectedEventId && (
-                <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.5)", display: "flex", justifyContent: "center", alignItems: "center" }}>
-                    <div style={{ background: "white", padding: "20px", borderRadius: "8px", width: "500px", maxHeight: "80vh", overflowY: "auto" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <h3>👥 Attendee List</h3>
-                            <button onClick={() => setSelectedEventId(null)} style={{ cursor: "pointer" }}>❌ Close</button>
+                <div className="modal-overlay" onClick={() => setSelectedEventId(null)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+                            <h3>👥 Attendees</h3>
+                            <button onClick={() => setSelectedEventId(null)}>Close</button>
                         </div>
-
-                        <button onClick={() => downloadCsv(selectedEventId)} style={{ marginBottom: "15px", padding: "8px", background: "#28a745", color: "white", border: "none", cursor: "pointer" }}>
-                            📥 Download CSV
-                        </button>
-
-                        <table style={{ width: "100%", textAlign: "left", fontSize: "14px" }}>
-                            <thead>
-                            <tr style={{ borderBottom: "1px solid #ccc" }}>
-                                <th>Email</th>
-                                <th>Status</th>
-                            </tr>
-                            </thead>
+                        <button onClick={() => downloadCsv(selectedEventId)} className="btn btn-success" style={{width:'100%', marginBottom:'10px'}}>Download CSV</button>
+                        <table style={{width:'100%'}}>
+                            <thead><tr><th style={{textAlign:'left'}}>Email</th><th style={{textAlign:'left'}}>Status</th></tr></thead>
                             <tbody>
-                            {attendees.length === 0 && <tr><td colSpan={2}>No attendees yet.</td></tr>}
-                            {attendees.map((a, idx) => (
-                                <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
-                                    <td style={{ padding: "8px" }}>{a.email}</td>
-                                    <td>{a.status}</td>
-                                </tr>
-                            ))}
+                            {attendees.map((a, i) => <tr key={i}><td>{a.email}</td><td>{a.status}</td></tr>)}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* --- CANCEL CONFIRMATION MODAL --- */}
+            {pendingCancelId && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ maxWidth: "400px", textAlign: "center" }}>
+                        <h3 style={{ marginBottom: "10px" }}>Cancel Registration?</h3>
+                        <p style={{ color: "#666", marginBottom: "20px" }}>Are you sure you want to cancel your registration for this event?</p>
+                        <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                            <button onClick={() => setPendingCancelId(null)} className="btn btn-secondary">No, Keep it</button>
+                            <button onClick={confirmCancel} className="btn btn-danger">Yes, Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- INVITE USER MODAL --- */}
+            {pendingInviteId && (
+                <div className="modal-overlay">
+                    <div className="modal-content" style={{ maxWidth: "400px" }}>
+                        <h3 style={{ marginBottom: "15px" }}>Invite User</h3>
+                        <p style={{ fontSize: "14px", color: "#666", marginBottom: "10px" }}>Enter the email address of the person you want to invite.</p>
+
+                        <input
+                            type="email"
+                            className="input-dark"
+                            style={{ width: "100%", marginBottom: "20px", border: "1px solid #ccc" }}
+                            placeholder="user@example.com"
+                            value={inviteEmailInput}
+                            onChange={(e) => setInviteEmailInput(e.target.value)}
+                        />
+
+                        <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                            <button onClick={() => setPendingInviteId(null)} className="btn btn-secondary">Cancel</button>
+                            <button onClick={submitInvite} className="btn btn-primary">Send Invite</button>
+                        </div>
                     </div>
                 </div>
             )}
