@@ -1,1 +1,176 @@
-first commit
+CampusSync - Campus Event Management System (CEMS)
+
+CampusSync is a full-stack web application designed to centralize event discovery, registration, and management for universities. It features a modern React frontend, a high-performance Go backend, and a robust PostgreSQL database, all containerized with Docker.
+
+🚀 Features Implemented
+
+This project implements a complete Event Lifecycle Management system:
+
+🔐 Authentication & Security
+
+OIDC Integration: Secure login via Auth0 (Google/GitHub).
+
+RBAC (Role-Based Access Control): Distinct permissions for Admins, Organizers, and Members.
+
+Secure API: Middleware validation for JWT tokens on all protected endpoints.
+
+📅 Event Management
+
+CRUD Operations: Organizers can create, edit, and cancel events.
+
+Visibility Control: Support for Public (open to all) and Private (invite-only) events.
+
+Automated Lifecycle: Background Go routines automatically update event status (UPCOMING -> IN_PROGRESS -> COMPLETED) based on time.
+
+🎟️ Registration Engine
+
+Capacity Logic: Enforces attendee limits securely using database transactions.
+
+Waitlist System: Automatically queues users when an event is full.
+
+Automatic Promotion: If a spot opens (via cancellation), the system automatically promotes the next waitlisted user and notifies them.
+
+Conflict Detection: Prevents double-booking.
+
+👥 Organizer Tools
+
+Manage Attendees: View list of registered and waitlisted users.
+
+CSV Export: Download attendee data for external use.
+
+Bulk Invitations: Upload .csv files to invite hundreds of users to private events instantly.
+
+Manual Invitations: Invite specific users by email.
+
+🔍 User Experience
+
+Dual Views: Switch between List View and a visual Calendar View (Monthly/Weekly).
+
+Search & Filter: Real-time filtering by event title, description, or location.
+
+My Schedule: Dedicated dashboard for users to track their registrations and status.
+
+🛠️ Tech Stack
+
+Frontend: React (Vite), TypeScript, CSS Modules, React Big Calendar.
+
+Backend: Go (Golang) 1.22, Standard Library (net/http), lib/pq driver.
+
+Database: PostgreSQL 15.
+
+Infrastructure: Docker, Docker Compose.
+
+Auth: Auth0 (OpenID Connect).
+
+📋 Prerequisites
+
+Before running the project, ensure you have the following installed:
+
+Docker Desktop (running)
+
+Git
+
+⚙️ Configuration (Auth0)
+
+Note: To run this project successfully, you must provide valid Auth0 credentials.
+
+Frontend Config: Open frontend/src/main.tsx and update:
+
+const domain = "YOUR_AUTH0_DOMAIN";
+const clientId = "YOUR_CLIENT_ID";
+const audience = "http://localhost:8080";
+
+
+Backend Config: Open backend/cmd/api/main.go and update:
+
+auth0Domain := "YOUR_AUTH0_DOMAIN"
+auth0Audience := "http://localhost:8080"
+
+
+🏃‍♂️ How to Run
+
+This project is fully Dockerized for easy setup.
+
+1. Clone the Repository
+
+git clone <repository-url>
+cd CampusSync
+
+
+2. Start the Application
+
+Run the following command in the root directory:
+
+docker-compose up --build
+
+
+This will build the Go Backend, the React Frontend, and spin up the PostgreSQL database.
+
+3. Access the App
+
+Open your browser and navigate to:
+http://localhost:5173
+
+👮 Admin Setup (First Run)
+
+By default, all new users are created with the "Member" role. To unlock Organizer/Admin features, you must manually promote your first user via the database.
+
+Log in to the app via the browser.
+
+Open a new terminal window.
+
+Run the following command to promote yourself to Admin:
+
+docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin' WHERE email='YOUR_EMAIL@gmail.com';"
+
+
+(Replace YOUR_EMAIL@gmail.com with the email you used to log in).
+
+Refresh the browser. You will now see the Admin Console and Create Event options.
+
+🧪 Testing Specific Features
+
+Testing the Waitlist
+
+Create an event with Capacity: 1.
+
+Register with User A. (Status: Registered).
+
+Log in with User B (incognito/different browser) and register. (Status: Waitlisted).
+
+As User A, cancel your registration.
+
+User B will automatically be promoted to Registered. Check the backend logs for the email notification!
+
+Testing Private Events
+
+Create an event with Visibility: Private.
+
+Try to join as a normal user (Access Denied).
+
+As the organizer, use the Invite or Bulk CSV button to invite the user's email.
+
+Try to join again (Success).
+
+📂 Project Structure
+
+CampusSync/
+├── backend/
+│   ├── cmd/api/main.go       # Application Entrypoint
+│   ├── internal/
+│   │   ├── auth/             # JWT Middleware & CORS
+│   │   ├── background/       # Background Status Updater
+│   │   ├── events/           # Event Logic & Handlers
+│   │   ├── registration/     # Waitlist & Registration Logic
+│   │   ├── store/            # Database Repositories (SQL)
+│   │   └── notifications/    # Mock Email Service
+│   ├── db/migrations/        # SQL Schema Definitions
+│   └── Dockerfile
+├── frontend/
+│   ├── src/
+│   │   ├── components/       # UI Components (EventDashboard, CalendarView)
+│   │   ├── App.tsx           # Main Layout & Auth Logic
+│   │   └── main.tsx          # Auth0 Provider Setup
+│   └── Dockerfile
+├── docker-compose.yml        # Container Orchestration
+└── README.md
