@@ -1,11 +1,12 @@
 package events
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/store"
@@ -29,12 +30,31 @@ type CreateEventRequest struct {
 	Visibility  string    `json:"visibility"`
 }
 
+// 👇 NEW: Validation Logic
+func (req *CreateEventRequest) Validate() error {
+	if strings.TrimSpace(req.Title) == "" {
+		return errors.New("event title is required")
+	}
+	if strings.TrimSpace(req.Location) == "" {
+		return errors.New("location is required")
+	}
+	if req.Capacity <= 0 {
+		return errors.New("capacity must be greater than zero")
+	}
+	if req.EndTime.Before(req.StartTime) {
+		return errors.New("end time must be after start time")
+	}
+	if req.Visibility != "PUBLIC" && req.Visibility != "PRIVATE" {
+		return errors.New("invalid visibility (must be PUBLIC or PRIVATE)")
+	}
+	return nil
+}
+
 func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	// 1. Get User ID from Token
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	auth0ID := claims.RegisteredClaims.Subject
 
-	// Find the local DB user ID based on Auth0 ID
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), auth0ID)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusUnauthorized)
@@ -44,20 +64,26 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	if user.Role != "Organizer" && user.Role != "Admin" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{
-			"message": "Forbidden: You must be an Organizer to create events.",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"message": "Forbidden: Only Organizers can create events."})
 		return
 	}
 
 	// 2. Decode Request
 	var req CreateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid body", http.StatusBadRequest)
+		http.Error(w, "Invalid body format", http.StatusBadRequest)
 		return
 	}
 
-	// 3. Create Event Object
+	// 3. 👇 Validate Data
+	if err := req.Validate(); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"message": err.Error()})
+		return
+	}
+
+	// 4. Create Event Object
 	event := &store.Event{
 		Title:       req.Title,
 		Description: req.Description,
@@ -70,7 +96,6 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		Visibility:  req.Visibility,
 	}
 
-	// 4. Save to DB
 	if err := h.Repo.Create(r.Context(), event); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -80,97 +105,18 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(event)
 }
 
-func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse Query Params
-	query := r.URL.Query().Get("q")
-	location := r.URL.Query().Get("location")
-
-	// 2. Call the new Search method
-	// (If params are empty, it returns all events, acting just like ListAll)
-	events, err := h.Repo.Search(r.Context(), query, location)
-	if err != nil {
-		http.Error(w, "Failed to fetch events", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(events)
-}
-
-func (h *Handler) isOrganizer(ctx context.Context, eventID int64, userID int64) bool {
-	// In a real app, you'd check the DB to see if event.organizer_id == userID
-	// For this MVP, we will just check if they are an "Organizer" or "Admin" role generally
-	// You can enhance this later to be strict about ownership.
-	return true
-}
-
-func (h *Handler) HandleListAttendees(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse Event ID
-	eventIDStr := r.URL.Query().Get("event_id")
-	eventID, _ := strconv.ParseInt(eventIDStr, 10, 64)
-
-	// 2. Fetch Data
-	attendees, err := h.Repo.GetAttendees(r.Context(), eventID)
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(attendees)
-}
-
-func (h *Handler) HandleExportAttendees(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse Event ID
-	eventIDStr := r.URL.Query().Get("event_id")
-	eventID, _ := strconv.ParseInt(eventIDStr, 10, 64)
-
-	// 2. Fetch Data
-	attendees, err := h.Repo.GetAttendees(r.Context(), eventID)
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	// 3. Generate CSV
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=attendees.csv")
-
-	writer := csv.NewWriter(w)
-
-	// Header
-	writer.Write([]string{"User ID", "Email", "Status", "Registered At"})
-
-	// Rows
-	for _, a := range attendees {
-		writer.Write([]string{
-			strconv.FormatInt(a.UserID, 10),
-			a.Email,
-			a.Status,
-			a.CreatedAt.Format(time.RFC3339),
-		})
-	}
-	writer.Flush()
-}
-
 func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse Request
+	// 1. Parse Request (Reuse Create struct + ID)
 	var req struct {
-		ID          int64     `json:"id"`
-		Title       string    `json:"title"`
-		Description string    `json:"description"`
-		Location    string    `json:"location"`
-		StartTime   time.Time `json:"start_time"`
-		EndTime     time.Time `json:"end_time"`
-		Capacity    int       `json:"capacity"`
-		Visibility  string    `json:"visibility"`
+		CreateEventRequest
+		ID int64 `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid body", http.StatusBadRequest)
 		return
 	}
 
-	// 2. Security Check (Must be Organizer/Admin)
+	// 2. Security Check
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -182,7 +128,15 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Create Event Object
+	// 3. 👇 Validate Data
+	if err := req.Validate(); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"message": err.Error()})
+		return
+	}
+
+	// 4. Update DB
 	event := &store.Event{
 		ID:          req.ID,
 		Title:       req.Title,
@@ -194,7 +148,6 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		Visibility:  req.Visibility,
 	}
 
-	// 4. Update DB
 	if err := h.Repo.Update(r.Context(), event); err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -202,4 +155,121 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Event updated"})
+}
+
+// ... (Keep HandleListEvents, HandleListAttendees, HandleExportAttendees, HandleBulkInvite, HandleInviteUser as they are) ...
+// If you need me to paste those again, I can, but they don't need changes.
+// Ensure you keep the other functions in this file!
+
+func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	location := r.URL.Query().Get("location")
+
+	events, err := h.Repo.Search(r.Context(), query, location)
+	if err != nil {
+		http.Error(w, "Failed to fetch events", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(events)
+}
+
+func (h *Handler) HandleListAttendees(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := r.URL.Query().Get("event_id")
+	eventID, _ := strconv.ParseInt(eventIDStr, 10, 64)
+
+	attendees, err := h.Repo.GetAttendees(r.Context(), eventID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(attendees)
+}
+
+func (h *Handler) HandleExportAttendees(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := r.URL.Query().Get("event_id")
+	eventID, _ := strconv.ParseInt(eventIDStr, 10, 64)
+
+	attendees, err := h.Repo.GetAttendees(r.Context(), eventID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=attendees.csv")
+
+	writer := csv.NewWriter(w)
+	writer.Write([]string{"User ID", "Email", "Status", "Registered At"})
+	for _, a := range attendees {
+		writer.Write([]string{
+			strconv.FormatInt(a.UserID, 10),
+			a.Email,
+			a.Status,
+			a.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	writer.Flush()
+}
+
+func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		EventID int64  `json:"event_id"`
+		Email   string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+	if err := h.Repo.InviteUser(r.Context(), req.EventID, req.Email); err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "User invited"})
+}
+
+func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "File too large", http.StatusBadRequest)
+		return
+	}
+	eventIDStr := r.FormValue("event_id")
+	eventID, err := strconv.ParseInt(eventIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "Missing file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		http.Error(w, "Invalid CSV format", http.StatusBadRequest)
+		return
+	}
+	var emails []string
+	for _, row := range records {
+		if len(row) > 0 {
+			emails = append(emails, row[0])
+		}
+	}
+	count, err := h.Repo.BulkInvite(r.Context(), eventID, emails)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Bulk invite processed",
+		"count":   count,
+	})
 }

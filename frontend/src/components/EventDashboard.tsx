@@ -31,23 +31,26 @@ export default function EventDashboard() {
     const [searchQuery, setSearchQuery] = useState("");
     const [searchLocation, setSearchLocation] = useState("");
 
-    // Manage Attendees State
-    const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+    // --- MODAL STATES ---
+    const [selectedEventId, setSelectedEventId] = useState<number | null>(null); // Manage Attendees
     const [attendees, setAttendees] = useState<any[]>([]);
+
+    const [cancelModalId, setCancelModalId] = useState<number | null>(null); // Cancel Confirmation
+
+    const [inviteModalId, setInviteModalId] = useState<number | null>(null); // Invite User
+    const [inviteEmail, setInviteEmail] = useState("");
 
     // Edit State
     const [editingEventId, setEditingEventId] = useState<number | null>(null);
 
-    // 👇 NEW: Modal States for Cancel & Invite
-    const [pendingCancelId, setPendingCancelId] = useState<number | null>(null);
-    const [pendingInviteId, setPendingInviteId] = useState<number | null>(null);
-    const [inviteEmailInput, setInviteEmailInput] = useState("");
-
-    // Validation State
+    // Form Validation State
     const [formError, setFormError] = useState("");
     const [formSuccess, setFormSuccess] = useState("");
 
-    // Form State
+    // 👇 NEW: State to trigger a crash for testing
+    const [simulateCrash, setSimulateCrash] = useState(false);
+
+    // Form Data
     const [formData, setFormData] = useState({
         title: "",
         description: "",
@@ -58,13 +61,17 @@ export default function EventDashboard() {
         visibility: "PUBLIC",
     });
 
+    // 👇 NEW: This logic crashes the app intentionally when the button is clicked
+    if (simulateCrash) {
+        throw new Error("Manual crash triggered for testing Error Boundary!");
+    }
+
     // --- API CALLS ---
 
     const fetchEvents = async (query = "", loc = "") => {
         try {
             setLoading(true);
             const token = await getAccessTokenSilently();
-
             const params = new URLSearchParams();
             if (query) params.append("q", query);
             if (loc) params.append("location", loc);
@@ -167,18 +174,15 @@ export default function EventDashboard() {
         }
     };
 
-    // 👇 REFACTORED: Opens Modal instead of confirm()
-    const initiateCancel = (eventId: number) => {
-        setPendingCancelId(eventId);
+    const handleCancelClick = (eventId: number) => {
+        setCancelModalId(eventId);
     };
 
-    // 👇 NEW: Logic executed when "Yes" is clicked in modal
     const confirmCancel = async () => {
-        if (!pendingCancelId) return;
-
+        if (!cancelModalId) return;
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch(`http://localhost:8080/api/registrations?event_id=${pendingCancelId}`, {
+            const res = await fetch(`http://localhost:8080/api/registrations?event_id=${cancelModalId}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -192,23 +196,19 @@ export default function EventDashboard() {
                 showToast(data.message, "error");
             }
         } catch (err) {
-            console.error(err);
             showToast("Cancellation failed.", "error");
         } finally {
-            setPendingCancelId(null); // Close modal
+            setCancelModalId(null); // Close modal
         }
     };
 
-    // 👇 REFACTORED: Opens Modal instead of prompt()
-    const initiateInvite = (eventId: number) => {
-        setPendingInviteId(eventId);
-        setInviteEmailInput("");
+    const handleInviteClick = (eventId: number) => {
+        setInviteModalId(eventId);
+        setInviteEmail(""); // Reset input
     };
 
-    // 👇 NEW: Logic executed when "Send Invite" is clicked
-    const submitInvite = async () => {
-        if (!pendingInviteId || !inviteEmailInput) return;
-
+    const sendInvite = async () => {
+        if (!inviteModalId || !inviteEmail) return;
         try {
             const token = await getAccessTokenSilently();
             const res = await fetch("http://localhost:8080/api/events/invite", {
@@ -217,7 +217,7 @@ export default function EventDashboard() {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ event_id: pendingInviteId, email: inviteEmailInput }),
+                body: JSON.stringify({ event_id: inviteModalId, email: inviteEmail }),
             });
 
             if (res.ok) {
@@ -226,10 +226,9 @@ export default function EventDashboard() {
                 showToast("❌ Failed to invite user.", "error");
             }
         } catch (err) {
-            console.error(err);
             showToast("Error sending invitation.", "error");
         } finally {
-            setPendingInviteId(null); // Close modal
+            setInviteModalId(null); // Close modal
         }
     };
 
@@ -275,16 +274,8 @@ export default function EventDashboard() {
         setFormSuccess("");
 
         const start = new Date(evt.start_time).toISOString().slice(0, 16);
-
-        let end = "";
-        if (evt.end_time) {
-            end = new Date(evt.end_time).toISOString().slice(0, 16);
-        } else {
-            const d = new Date(evt.start_time);
-            d.setHours(d.getHours() + 1);
-            end = d.toISOString().slice(0, 16);
-        }
-
+        let end = evt.end_time ? new Date(evt.end_time).toISOString().slice(0, 16) : "";
+        if (!end) { const d = new Date(evt.start_time); d.setHours(d.getHours() + 1); end = d.toISOString().slice(0, 16); }
         setFormData({
             title: evt.title,
             description: evt.description,
@@ -374,6 +365,15 @@ export default function EventDashboard() {
         <div className="dashboard-container">
             <div className="dashboard-header">
                 <h2 style={{fontSize: "24px", fontWeight: "bold"}}>📅 Event Dashboard</h2>
+
+                {/* 👇 NEW: Test Crash Button */}
+                <button
+                    onClick={() => setSimulateCrash(true)}
+                    className="btn btn-danger"
+                    style={{ padding: "8px 12px" }}
+                >
+                    💣 Crash App
+                </button>
             </div>
 
             {/* Form */}
@@ -382,64 +382,64 @@ export default function EventDashboard() {
                     {formError && <div className="alert-box alert-error">{formError}</div>}
                     {formSuccess && <div className="alert-box alert-success">{formSuccess}</div>}
 
-                    <div className="border-b border-white/10 pb-12">
-                        <h2 className="text-base font-semibold text-white">
+                    <div className="border-b border-gray-200 pb-12">
+                        <h2 className="text-base font-semibold text-gray-900">
                             {editingEventId ? "Edit Event Details" : "Create New Event"}
                         </h2>
-                        <p className="mt-1 text-sm text-gray-400">
+                        <p className="mt-1 text-sm text-gray-600">
                             This information will be displayed publicly on the event calendar.
                         </p>
 
                         <div className="mt-10 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
                             <div className="sm:col-span-4">
-                                <label htmlFor="title" className="block text-sm font-medium text-white">Event Title</label>
+                                <label htmlFor="title" className="block text-sm font-medium text-gray-900">Event Title</label>
                                 <div className="mt-2">
-                                    <input type="text" name="title" id="title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="input-dark" placeholder="e.g. Annual Hackathon" required />
+                                    <input type="text" name="title" id="title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="input-light" placeholder="e.g. Annual Hackathon" required />
                                 </div>
                             </div>
                             <div className="col-span-full">
-                                <label htmlFor="description" className="block text-sm font-medium text-white">Description</label>
+                                <label htmlFor="description" className="block text-sm font-medium text-gray-900">Description</label>
                                 <div className="mt-2">
-                                    <textarea name="description" id="description" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="input-dark" placeholder="Write a few sentences about the event." />
+                                    <textarea name="description" id="description" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="input-light" placeholder="Write a few sentences about the event." />
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="border-b border-white/10 pb-12">
-                        <h2 className="text-base font-semibold text-white">Logistics & Settings</h2>
-                        <p className="mt-1 text-sm text-gray-400">Set the location, time, and capacity constraints.</p>
+                    <div className="border-b border-gray-200 pb-12">
+                        <h2 className="text-base font-semibold text-gray-900">Logistics & Settings</h2>
+                        <p className="mt-1 text-sm text-gray-600">Set the location, time, and capacity constraints.</p>
 
                         <div className="mt-10 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
                             <div className="col-span-full">
-                                <label htmlFor="location" className="block text-sm font-medium text-white">Location / Address</label>
+                                <label htmlFor="location" className="block text-sm font-medium text-gray-900">Location / Address</label>
                                 <div className="mt-2">
-                                    <input type="text" name="location" id="location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="input-dark" required />
+                                    <input type="text" name="location" id="location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="input-light" required />
                                 </div>
                             </div>
                             <div className="sm:col-span-3">
-                                <label htmlFor="start-time" className="block text-sm font-medium text-white">Start Time</label>
+                                <label htmlFor="start-time" className="block text-sm font-medium text-gray-900">Start Time</label>
                                 <div className="mt-2">
-                                    <input type="datetime-local" name="start-time" id="start-time" value={formData.start_time} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} className="input-dark" required />
+                                    <input type="datetime-local" name="start-time" id="start-time" value={formData.start_time} onChange={(e) => setFormData({ ...formData, start_time: e.target.value })} className="input-light" required />
                                 </div>
                             </div>
                             <div className="sm:col-span-3">
-                                <label htmlFor="end-time" className="block text-sm font-medium text-white">End Time</label>
+                                <label htmlFor="end-time" className="block text-sm font-medium text-gray-900">End Time</label>
                                 <div className="mt-2">
-                                    <input type="datetime-local" name="end-time" id="end-time" value={formData.end_time} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} className="input-dark" required />
+                                    <input type="datetime-local" name="end-time" id="end-time" value={formData.end_time} onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} className="input-light" required />
                                 </div>
                             </div>
                             <div className="sm:col-span-3">
-                                <label htmlFor="capacity" className="block text-sm font-medium text-white">Capacity</label>
+                                <label htmlFor="capacity" className="block text-sm font-medium text-gray-900">Capacity</label>
                                 <div className="mt-2">
-                                    <input type="number" name="capacity" id="capacity" value={formData.capacity || ""} onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })} className="input-dark" required />
+                                    <input type="number" name="capacity" id="capacity" value={formData.capacity || ""} onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })} className="input-light" required />
                                 </div>
                             </div>
                             <div className="sm:col-span-3">
-                                <label htmlFor="visibility" className="block text-sm font-medium text-white">Visibility</label>
+                                <label htmlFor="visibility" className="block text-sm font-medium text-gray-900">Visibility</label>
                                 <div className="mt-2 grid grid-cols-1">
                                     <div className="select-wrapper">
-                                        <select id="visibility" name="visibility" value={formData.visibility} onChange={(e) => setFormData({ ...formData, visibility: e.target.value })} className="select-dark">
+                                        <select id="visibility" name="visibility" value={formData.visibility} onChange={(e) => setFormData({ ...formData, visibility: e.target.value })} className="select-light">
                                             <option value="PUBLIC">Public</option>
                                             <option value="PRIVATE">Private (Invite Only)</option>
                                         </select>
@@ -520,8 +520,8 @@ export default function EventDashboard() {
 
                                     <div className="card-actions">
                                         <button onClick={() => handleRegister(evt.id)} className="btn btn-success">Join</button>
-                                        <button onClick={() => initiateCancel(evt.id)} className="btn btn-danger">Cancel</button>
-                                        <button onClick={() => initiateInvite(evt.id)} className="btn btn-secondary">Invite</button>
+                                        <button onClick={() => handleCancelClick(evt.id)} className="btn btn-danger">Cancel</button>
+                                        <button onClick={() => handleInviteClick(evt.id)} className="btn btn-secondary">Invite</button>
                                         <button onClick={() => handleBulkInvite(evt.id)} className="btn btn-secondary">CSV</button>
                                         <button onClick={() => fetchAttendees(evt.id)} className="btn btn-info">Manage</button>
                                         <button onClick={() => handleEditClick(evt)} className="btn btn-warning">Edit</button>
@@ -538,7 +538,9 @@ export default function EventDashboard() {
                 </>
             )}
 
-            {/* --- ATTENDEE MODAL --- */}
+            {/* --- MODALS --- */}
+
+            {/* 1. Attendee Management Modal */}
             {selectedEventId && (
                 <div className="modal-overlay" onClick={() => setSelectedEventId(null)}>
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -557,43 +559,42 @@ export default function EventDashboard() {
                 </div>
             )}
 
-            {/* --- CANCEL CONFIRMATION MODAL --- */}
-            {pendingCancelId && (
+            {/* 2. Cancel Confirmation Modal */}
+            {cancelModalId && (
                 <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: "400px", textAlign: "center" }}>
-                        <h3 style={{ marginBottom: "10px" }}>Cancel Registration?</h3>
-                        <p style={{ color: "#666", marginBottom: "20px" }}>Are you sure you want to cancel your registration for this event?</p>
-                        <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
-                            <button onClick={() => setPendingCancelId(null)} className="btn btn-secondary">No, Keep it</button>
-                            <button onClick={confirmCancel} className="btn btn-danger">Yes, Cancel</button>
+                    <div className="modal-content" style={{maxWidth: '400px', textAlign: 'center'}}>
+                        <h3 style={{marginBottom: '10px'}}>Are you sure?</h3>
+                        <p style={{color: '#666', marginBottom: '20px'}}>Do you want to cancel your registration for this event?</p>
+                        <div style={{display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px'}}>
+                            <button onClick={() => setCancelModalId(null)} className="btn btn-secondary">No, Keep It</button>
+                            <button onClick={confirmCancel} className="btn btn-danger">Yes, Cancel Registration</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- INVITE USER MODAL --- */}
-            {pendingInviteId && (
+            {/* 3. Invite User Modal */}
+            {inviteModalId && (
                 <div className="modal-overlay">
-                    <div className="modal-content" style={{ maxWidth: "400px" }}>
-                        <h3 style={{ marginBottom: "15px" }}>Invite User</h3>
-                        <p style={{ fontSize: "14px", color: "#666", marginBottom: "10px" }}>Enter the email address of the person you want to invite.</p>
-
+                    <div className="modal-content" style={{maxWidth: '400px'}}>
+                        <h3 style={{marginBottom: '15px'}}>💌 Invite User</h3>
+                        <p style={{marginBottom: '10px', fontSize: '14px', color: '#666'}}>Enter the email address of the person you want to invite.</p>
                         <input
                             type="email"
-                            className="input-dark"
-                            style={{ width: "100%", marginBottom: "20px", border: "1px solid #ccc" }}
+                            className="input-light"
                             placeholder="user@example.com"
-                            value={inviteEmailInput}
-                            onChange={(e) => setInviteEmailInput(e.target.value)}
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            style={{width: '100%', marginBottom: '20px', border: '1px solid #ccc', padding: '8px', borderRadius: '4px'}}
                         />
-
-                        <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                            <button onClick={() => setPendingInviteId(null)} className="btn btn-secondary">Cancel</button>
-                            <button onClick={submitInvite} className="btn btn-primary">Send Invite</button>
+                        <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px'}}>
+                            <button onClick={() => setInviteModalId(null)} className="btn btn-secondary">Cancel</button>
+                            <button onClick={sendInvite} className="btn btn-submit">Send Invite</button>
                         </div>
                     </div>
                 </div>
             )}
+
         </div>
     );
 }

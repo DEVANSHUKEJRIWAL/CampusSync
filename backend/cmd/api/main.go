@@ -18,7 +18,6 @@ import (
 
 func main() {
 	// 1. Database Connection
-	// Check if running in Docker (Env var set), otherwise use Localhost
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
 		dsn = "postgres://postgres:password@127.0.0.1:5432/cems?sslmode=disable"
@@ -30,6 +29,7 @@ func main() {
 	}
 	defer db.Close()
 
+	// Start Background Status Updater
 	updater := background.NewStatusUpdater(db)
 	updater.Start()
 	log.Println("⏰ Background Status Updater started")
@@ -53,33 +53,38 @@ func main() {
 		EventRepo: eventRepo,
 	}
 
-	auth0Domain := "cems-terps.us.auth0.com"
+	auth0Domain := "YOUR_AUTH0_DOMAIN"
 	auth0Audience := "http://localhost:8080"
 
 	authMiddleware := auth.EnsureValidToken(auth0Domain, auth0Audience)
+
+	// 4. Router Setup
 	mux := http.NewServeMux()
 
-	// Public Routes
+	// --- PUBLIC ROUTES (No Auth Required) ---
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "db": "connected"})
 	})
 
-	// 3. API Routes (Protected)
+	// 👇 MOVED: This is now public so k6 can stress-test the DB (and guests can view events)
+	mux.HandleFunc("GET /api/events", eventHandler.HandleListEvents)
+
+	// --- PROTECTED ROUTES (Require Login) ---
 	apiMux := http.NewServeMux()
 
 	// User Routes
 	apiMux.HandleFunc("POST /users/sync", userHandler.HandleSyncUser)
 
-	// Event Routes
+	// Event Routes (Write operations still protected)
 	apiMux.HandleFunc("POST /events", eventHandler.HandleCreateEvent)
-	apiMux.HandleFunc("GET /events", eventHandler.HandleListEvents)
+	// Note: GET /events was removed from here
+	apiMux.HandleFunc("PUT /events", eventHandler.HandleUpdateEvent) // Ensure Update is registered
 	apiMux.HandleFunc("POST /events/invite", eventHandler.HandleInviteUser)
+	apiMux.HandleFunc("POST /events/invite/bulk", eventHandler.HandleBulkInvite)
 	apiMux.HandleFunc("GET /events/attendees", eventHandler.HandleListAttendees)
 	apiMux.HandleFunc("GET /events/export", eventHandler.HandleExportAttendees)
-	apiMux.HandleFunc("PUT /events", eventHandler.HandleUpdateEvent)
-	apiMux.HandleFunc("POST /events/invite/bulk", eventHandler.HandleBulkInvite)
 
 	// Registration Routes
 	apiMux.HandleFunc("POST /registrations", regHandler.HandleRegister)
@@ -90,7 +95,8 @@ func main() {
 	apiMux.HandleFunc("GET /admin/users", userHandler.HandleListUsers)
 	apiMux.HandleFunc("PATCH /admin/users/role", userHandler.HandleUpdateRole)
 
-	// Mount API routes behind Auth Middleware
+	// Mount Protected API routes
+	// The specific public route "GET /api/events" above will take precedence over this prefix match
 	mux.Handle("/api/", http.StripPrefix("/api", authMiddleware(apiMux)))
 
 	// 6. Start Server

@@ -68,8 +68,10 @@ func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
 // Update in backend/internal/users/handler.go
 
 // HandleUpdateRole allows Admins to promote/demote users
+// In backend/internal/users/handler.go
+
 func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
-	// 1. Identify the REQUESTER (Who is trying to do this?)
+	// 1. Identify the REQUESTER
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	requesterID := claims.RegisteredClaims.Subject
 
@@ -79,7 +81,7 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🔒 SECURITY CHECK: Are they an Admin?
+	// 🔒 SECURITY CHECK 1: Only Admins can change roles
 	if requester.Role != "Admin" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -99,7 +101,26 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Validate Input
+	// 🔒 SECURITY CHECK 2: Prevent modifying the Super Admin
+	// Replace this email with YOUR specific admin email
+	const SuperAdminEmail = "devanshukejriwal24@gmail.com"
+
+	targetUser, err := h.Repo.GetByID(r.Context(), req.UserID)
+	if err != nil {
+		http.Error(w, "Target user not found", http.StatusNotFound)
+		return
+	}
+
+	if targetUser.Email == SuperAdminEmail {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Forbidden: Cannot modify the Super Admin account.",
+		})
+		return
+	}
+
+	// 3. Validate Role Input
 	if req.Role != "Admin" && req.Role != "Organizer" && req.Role != "Member" {
 		http.Error(w, "Invalid role", http.StatusBadRequest)
 		return

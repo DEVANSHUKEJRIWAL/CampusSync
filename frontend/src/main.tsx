@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { Auth0Provider } from '@auth0/auth0-react'
 import App from './App.tsx'
 import './index.css'
+import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import {ToastProvider} from "./context/ToastContext.tsx";
 
 // 👇 REPLACE THESE WITH YOUR ACTUAL VALUES FROM AUTH0 DASHBOARD
@@ -12,6 +13,7 @@ const audience = "http://localhost:8080"; // This matches the API Identifier we 
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
+        <ErrorBoundary>
         <Auth0Provider
             domain={domain}
             clientId={clientId}
@@ -25,5 +27,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             </ToastProvider>
 
         </Auth0Provider>
+            </ErrorBoundary>
     </React.StrictMode>,
 )

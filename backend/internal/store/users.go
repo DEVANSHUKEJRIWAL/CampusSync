@@ -89,3 +89,15 @@ func (r *UserRepository) ListAll(ctx context.Context) ([]*User, error) {
 	}
 	return users, nil
 }
+
+func (r *UserRepository) GetByID(ctx context.Context, id int64) (*User, error) {
+	query := `SELECT id, email, oidc_id, role, created_at, updated_at FROM users WHERE id = $1`
+	var user User
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&user.ID, &user.Email, &user.OIDCID, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}

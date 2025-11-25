@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useToast } from "../context/ToastContext"; // 👈 Import Hook
+import { useToast } from "../context/ToastContext";
 
 interface User {
     id: number;
@@ -9,9 +9,12 @@ interface User {
 }
 
 export default function AdminPanel() {
-    const { getAccessTokenSilently } = useAuth0();
-    const { showToast } = useToast(); // 👈 Initialize Hook
+    const { getAccessTokenSilently, user: authUser } = useAuth0(); // Get logged in user info
+    const { showToast } = useToast();
     const [users, setUsers] = useState<User[]>([]);
+    const [currentUserRole, setCurrentUserRole] = useState("");
+
+    const SUPER_ADMIN_EMAIL = "devanshukejriwal24@gmail.com"; // Lock this email
 
     useEffect(() => {
         fetchUsers();
@@ -23,7 +26,14 @@ export default function AdminPanel() {
             const res = await fetch("http://localhost:8080/api/admin/users", {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            if(res.ok) setUsers(await res.json());
+            if(res.ok) {
+                const data = await res.json();
+                setUsers(data);
+
+                // Find my own role
+                const me = data.find((u: User) => u.email === authUser?.email);
+                if (me) setCurrentUserRole(me.role);
+            }
         } catch (e) {
             console.error(e);
         }
@@ -44,18 +54,21 @@ export default function AdminPanel() {
 
             if (!res.ok) {
                 const errData = await res.json();
-                showToast(`Failed: ${errData.message || "Unknown error"}`, "error"); // 👈 Replaced alert
+                showToast(`Failed: ${errData.message}`, "error");
                 return;
             }
 
-            showToast("Role Updated Successfully!", "success"); // 👈 Replaced alert
-            fetchUsers(); // Refresh the list
+            showToast("Role Updated Successfully!", "success");
+            fetchUsers();
 
         } catch (error) {
             console.error(error);
-            showToast("Network or Permission Error", "error"); // 👈 Replaced alert
+            showToast("Network or Permission Error", "error");
         }
     };
+
+    // Check if I am allowed to edit
+    const canEdit = currentUserRole === "Admin";
 
     return (
         <div style={{ marginTop: "20px", padding: "20px", border: "2px solid #333", borderRadius: "8px", backgroundColor: "white" }}>
@@ -88,6 +101,10 @@ export default function AdminPanel() {
                                 value={u.role}
                                 onChange={(e) => updateRole(u.id, e.target.value)}
                                 style={{ padding: "5px" }}
+                                // 👇 Disable if:
+                                // 1. I am not an admin
+                                // 2. OR the target user is the Super Admin
+                                disabled={!canEdit || u.email === SUPER_ADMIN_EMAIL}
                             >
                                 <option value="Member">Member</option>
                                 <option value="Organizer">Organizer</option>
