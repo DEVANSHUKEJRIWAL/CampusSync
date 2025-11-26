@@ -1,14 +1,24 @@
+import { useState, useEffect } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import { useToast } from "./context/ToastContext"; // 👈 Import Hook
+import { useToast } from "./context/ToastContext";
 import EventDashboard from "./components/EventDashboard";
 import AdminPanel from "./components/AdminPanel";
 import "./App.css";
 
 function App() {
     const { loginWithRedirect, logout, user, isAuthenticated, getAccessTokenSilently, isLoading } = useAuth0();
-    const { showToast } = useToast(); // 👈 Get the function from Context
+    const { showToast } = useToast();
 
-    const syncUserWithBackend = async () => {
+    // State to store the role
+    const [userRole, setUserRole] = useState<string>("");
+
+    useEffect(() => {
+        if (isAuthenticated && user) {
+            syncUserWithBackend(true);
+        }
+    }, [isAuthenticated, user]);
+
+    const syncUserWithBackend = async (silent = false) => {
         try {
             const t = await getAccessTokenSilently();
             const response = await fetch("http://localhost:8080/api/users/sync", {
@@ -23,12 +33,14 @@ function App() {
             if (!response.ok) throw new Error("Failed to sync");
 
             const data = await response.json();
-            // 👇 UPDATED: Use global showToast
-            showToast(`User Synced! Role: ${data.role}`, "success");
+            setUserRole(data.role);
+
+            if (!silent) {
+                showToast(`✅ User Synced! Role: ${data.role}`, "success");
+            }
         } catch (error) {
             console.error("Sync failed", error);
-            // 👇 UPDATED: Use global showToast
-            showToast("Sync Failed. Check console.", "error");
+            if (!silent) showToast("Sync Failed. Check console.", "error");
         }
     };
 
@@ -55,16 +67,17 @@ function App() {
                     {isAuthenticated ? (
                         <>
                             <div className="user-pill">
-                                <span>Logged in as:</span>
+                                <span>{userRole || "Loading..."}</span>
+                                <span style={{color:'#ccc'}}>|</span>
                                 <strong>{user?.email}</strong>
                             </div>
 
                             <button
-                                onClick={syncUserWithBackend}
+                                onClick={() => syncUserWithBackend(false)}
                                 className="nav-btn btn-sync"
                                 title="Sync latest role from database"
                             >
-                                🔄 Sync Profile
+                                🔄 Sync
                             </button>
 
                             <button
@@ -105,11 +118,12 @@ function App() {
                     <>
                         <EventDashboard />
 
-                        {/* Admin Panel Section (Optional) */}
-                        <div className="admin-section">
-                            <h2>🔧 Admin Tools</h2>
-                            <AdminPanel />
-                        </div>
+                        
+                        {userRole === 'Admin' && (
+                            <div className="admin-section">
+                                <AdminPanel />
+                            </div>
+                        )}
                     </>
                 )}
             </main>

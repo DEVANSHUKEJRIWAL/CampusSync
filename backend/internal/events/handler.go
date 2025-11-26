@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -28,9 +29,10 @@ type CreateEventRequest struct {
 	EndTime     time.Time `json:"end_time"`
 	Capacity    int       `json:"capacity"`
 	Visibility  string    `json:"visibility"`
+	Category    string    `json:"category"`
 }
 
-// 👇 NEW: Validation Logic
+// Validate Logic
 func (req *CreateEventRequest) Validate() error {
 	if strings.TrimSpace(req.Title) == "" {
 		return errors.New("event title is required")
@@ -75,7 +77,7 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. 👇 Validate Data
+	// 3. Validate Data
 	if err := req.Validate(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -94,6 +96,7 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		OrganizerID: user.ID,
 		Status:      "UPCOMING",
 		Visibility:  req.Visibility,
+		Category:    req.Category, // 👈 Mapped Correctly
 	}
 
 	if err := h.Repo.Create(r.Context(), event); err != nil {
@@ -106,7 +109,7 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse Request (Reuse Create struct + ID)
+	// 1. Parse Request
 	var req struct {
 		CreateEventRequest
 		ID int64 `json:"id"`
@@ -128,7 +131,7 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. 👇 Validate Data
+	// 3. Validate Data
 	if err := req.Validate(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -146,6 +149,7 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		EndTime:     req.EndTime,
 		Capacity:    req.Capacity,
 		Visibility:  req.Visibility,
+		Category:    req.Category, // 👈 Mapped Correctly
 	}
 
 	if err := h.Repo.Update(r.Context(), event); err != nil {
@@ -153,19 +157,21 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go func() {
+		msg := "Update: Details for '" + event.Title + "' have changed."
+		h.Repo.NotifyAllAttendees(context.Background(), event.ID, msg)
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Event updated"})
 }
 
-// ... (Keep HandleListEvents, HandleListAttendees, HandleExportAttendees, HandleBulkInvite, HandleInviteUser as they are) ...
-// If you need me to paste those again, I can, but they don't need changes.
-// Ensure you keep the other functions in this file!
-
 func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	location := r.URL.Query().Get("location")
+	category := r.URL.Query().Get("category")
 
-	events, err := h.Repo.Search(r.Context(), query, location)
+	events, err := h.Repo.Search(r.Context(), query, location, category)
 	if err != nil {
 		http.Error(w, "Failed to fetch events", http.StatusInternalServerError)
 		return
@@ -216,6 +222,18 @@ func (h *Handler) HandleExportAttendees(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
+	// 🔒 Security: Check Permissions
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+	if user.Role != "Organizer" && user.Role != "Admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	var req struct {
 		EventID int64  `json:"event_id"`
 		Email   string `json:"email"`
@@ -233,6 +251,18 @@ func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
+	// 🔒 Security: Check Permissions
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+	if user.Role != "Organizer" && user.Role != "Admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, "File too large", http.StatusBadRequest)
 		return
@@ -272,4 +302,74 @@ func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
 		"message": "Bulk invite processed",
 		"count":   count,
 	})
+}
+
+// HandleAddFeedback allows users to rate and comment on an event
+func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
+	// 1. Get User
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Parse Request
+	var req struct {
+		EventID int64  `json:"event_id"`
+		Rating  int    `json:"rating"`
+		Comment string `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Validate Rating
+	if req.Rating < 1 || req.Rating > 5 {
+		http.Error(w, "Rating must be between 1 and 5", http.StatusBadRequest)
+		return
+	}
+
+	// 4. Save to DB
+	feedback := &store.Feedback{
+		EventID: req.EventID,
+		UserID:  user.ID,
+		Rating:  req.Rating,
+		Comment: req.Comment,
+	}
+
+	if err := h.Repo.AddFeedback(r.Context(), feedback); err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Feedback submitted successfully"})
+}
+
+// In backend/internal/events/handler.go
+
+func (h *Handler) HandleGetAnalytics(w http.ResponseWriter, r *http.Request) {
+	// 🔒 Security: Check Admin Role
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+	if user.Role != "Admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Get Stats
+	stats, err := h.Repo.GetSystemStats(r.Context())
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }

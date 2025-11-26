@@ -36,6 +36,7 @@ func TestEventRepository_Lifecycle(t *testing.T) {
 		OrganizerID: 1, // Ensure User ID 1 exists or mock it
 		Status:      "UPCOMING",
 		Visibility:  "PUBLIC",
+		Category:    "General", // Added Category
 	}
 
 	err := repo.Create(ctx, event)
@@ -54,7 +55,8 @@ func TestEventRepository_Lifecycle(t *testing.T) {
 	}
 
 	// 3. Test Search (Read)
-	events, err := repo.Search(ctx, "TEST_Event", "")
+	// 👇 FIXED: Added the 4th argument for Category ("")
+	events, err := repo.Search(ctx, "TEST_Event", "", "")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}

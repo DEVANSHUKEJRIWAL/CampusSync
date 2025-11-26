@@ -16,9 +16,12 @@ vi.mock('@auth0/auth0-react', () => ({
 // 2. Mock Global Fetch
 globalThis.fetch = vi.fn();
 
-// 3. Mock Calendar Component
+// 3. Mock Calendar & QR Components (UI libraries are hard to test in JSDOM)
 vi.mock('./CalendarView', () => ({
     default: () => <div data-testid="calendar-view">Mock Calendar View</div>
+}));
+vi.mock('react-qr-code', () => ({
+    default: () => <div data-testid="qr-code">QR Code</div>
 }));
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -35,15 +38,47 @@ describe('EventDashboard Component', () => {
         end_time: new Date().toISOString(),
         capacity: 100,
         status: 'UPCOMING',
-        visibility: 'PUBLIC'
+        visibility: 'PUBLIC',
+        registered_count: 5,
+        category: 'General'
     };
 
     beforeEach(() => {
         vi.clearAllMocks();
-        // Default: Return list of events for generic calls
-        (globalThis.fetch as any).mockResolvedValue({
-            ok: true,
-            json: async () => [mockEvent],
+
+        // Default Mock Handler for ALL API calls
+        (globalThis.fetch as any).mockImplementation((url: string) => {
+            // Mock User Role Sync (Return Admin so we can see the form)
+            if (url.includes('/users/sync')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({ role: 'Admin' }),
+                });
+            }
+            // Mock Notifications
+            if (url.includes('/notifications')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => [],
+                });
+            }
+            // Mock Events List
+            if (url.includes('/events')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => [mockEvent],
+                });
+            }
+            // Mock My Schedule
+            if (url.includes('/registrations/me')) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => [],
+                });
+            }
+
+            // Default fallback
+            return Promise.resolve({ ok: true, json: async () => ({}) });
         });
     });
 
@@ -52,11 +87,10 @@ describe('EventDashboard Component', () => {
         expect(screen.getByText(/Event Dashboard/i)).toBeInTheDocument();
     });
 
-    it('fetches and displays events', async () => {
+    it('fetches events and displays them', async () => {
         renderWithProviders(<EventDashboard />);
 
         await waitFor(() => {
-            // Use getAllByText to avoid errors if text appears multiple times
             const elements = screen.getAllByText('Interaction Test Event');
             expect(elements.length).toBeGreaterThan(0);
         });
@@ -68,20 +102,17 @@ describe('EventDashboard Component', () => {
         // 1. Wait for button to appear
         const joinBtn = await screen.findByRole('button', { name: /Join/i });
 
-        // 2. Mock the API Responses accurately
+        // 2. Override Mock for Registration call
         (globalThis.fetch as any).mockImplementation((url: string) => {
-            // Only return the success object if it's the registration POST
-            if (url.includes('event_id=')) {
+            if (url.includes('/registrations') && !url.includes('/me')) {
                 return Promise.resolve({
                     ok: true,
+                    status: 200,
                     json: async () => ({ status: 'REGISTERED' }),
                 });
             }
-            // For everything else (like refreshing the list or my schedule), return an array
-            return Promise.resolve({
-                ok: true,
-                json: async () => []
-            });
+            // Return defaults for background re-fetches
+            return Promise.resolve({ ok: true, json: async () => [] });
         });
 
         // 3. Click it!
@@ -93,14 +124,21 @@ describe('EventDashboard Component', () => {
         });
     });
 
+    it('shows Create Form only for Admins', async () => {
+        renderWithProviders(<EventDashboard />);
+
+        // Wait for the role sync to complete and form to appear
+        await waitFor(() => {
+            expect(screen.getByText(/Create New Event/i)).toBeInTheDocument();
+        });
+    });
+
     it('switches to calendar view', async () => {
         renderWithProviders(<EventDashboard />);
 
-        // 1. Find and Click "Calendar" Toggle
         const calBtn = screen.getByRole('button', { name: 'Calendar' });
         fireEvent.click(calBtn);
 
-        // 2. Check if Calendar Component is visible (via our Mock)
         await waitFor(() => {
             expect(screen.getByTestId('calendar-view')).toBeInTheDocument();
         });

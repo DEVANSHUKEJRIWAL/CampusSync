@@ -14,6 +14,7 @@ type User struct {
 	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	IsActive  bool      `json:"is_active"`
 }
 
 // UserRepository handles database interactions for users
@@ -72,7 +73,9 @@ func (r *UserRepository) UpdateRole(ctx context.Context, userID int64, role stri
 }
 
 func (r *UserRepository) ListAll(ctx context.Context) ([]*User, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT id, email, role, created_at FROM users ORDER BY id ASC")
+	query := "SELECT id, email, oidc_id, role, created_at, updated_at, is_active FROM users ORDER BY id ASC"
+
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +84,8 @@ func (r *UserRepository) ListAll(ctx context.Context) ([]*User, error) {
 	var users []*User
 	for rows.Next() {
 		var u User
-		// We don't need OIDCID here
-		if err := rows.Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt); err != nil {
+		// 👇 MUST SCAN INTO &u.IsActive
+		if err := rows.Scan(&u.ID, &u.Email, &u.OIDCID, &u.Role, &u.CreatedAt, &u.UpdatedAt, &u.IsActive); err != nil {
 			return nil, err
 		}
 		users = append(users, &u)

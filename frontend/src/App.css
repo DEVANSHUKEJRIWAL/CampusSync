@@ -177,9 +177,9 @@
 }
 
 .toast-error {
-    border-left-color: #ef4444; /* Red border */
-    background-color: #fef2f2;  /* Light red bg */
-    color: #991b1b;             /* Dark red text */
+    border-left-color: #ef4444;
+    background-color: #fef2f2;
+    color: #991b1b;
 }
 
 .toast-icon {

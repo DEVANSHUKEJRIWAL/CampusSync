@@ -146,3 +146,63 @@ func (h *Handler) HandleListUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
+
+func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
+	// 1. Identify the REQUESTER
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	requesterID := claims.RegisteredClaims.Subject
+
+	requester, err := h.Repo.GetByOIDCID(r.Context(), requesterID)
+	if err != nil {
+		http.Error(w, "Requester not found", http.StatusUnauthorized)
+		return
+	}
+
+	// 🔒 SECURITY CHECK 1: Only Admins can change active status
+	if requester.Role != "Admin" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Forbidden: Only Admins can change user status.",
+		})
+		return
+	}
+
+	// 2. Parse Request
+	var req struct {
+		UserID   int64 `json:"user_id"`
+		IsActive bool  `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	// 🔒 SECURITY CHECK 2: Prevent modifying the Super Admin
+	// Replace this with your actual admin email
+	const SuperAdminEmail = "devanshukejriwal24@gmail.com"
+
+	targetUser, err := h.Repo.GetByID(r.Context(), req.UserID)
+	if err != nil {
+		http.Error(w, "Target user not found", http.StatusNotFound)
+		return
+	}
+
+	if targetUser.Email == SuperAdminEmail {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Forbidden: Cannot deactivate the Super Admin account.",
+		})
+		return
+	}
+
+	// 3. Perform Update
+	if err := h.Repo.ToggleActive(r.Context(), req.UserID, req.IsActive); err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "User status updated successfully"})
+}
