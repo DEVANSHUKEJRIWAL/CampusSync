@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # 1. Database
   db:
     image: postgres:15-alpine
     container_name: cems_db
@@ -12,6 +13,32 @@ services:
       - POSTGRES_DB=cems
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Backend API
+  api:
+    build: ./backend
+    container_name: cems_api
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_DSN=postgres://postgres:password@db:5432/cems?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 3. Frontend UI
+  web:
+    build: frontend
+    container_name: cems_web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

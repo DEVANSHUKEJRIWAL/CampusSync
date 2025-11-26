@@ -101,3 +101,9 @@ func (r *UserRepository) GetByID(ctx context.Context, id int64) (*User, error) {
 	}
 	return &user, nil
 }
+
+func (r *UserRepository) ToggleActive(ctx context.Context, userID int64, isActive bool) error {
+	query := "UPDATE users SET is_active=$1, updated_at=NOW() WHERE id=$2"
+	_, err := r.db.ExecContext(ctx, query, isActive, userID)
+	return err
+}
