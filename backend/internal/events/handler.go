@@ -20,7 +20,6 @@ type Handler struct {
 	UserRepo *store.UserRepository
 }
 
-// CreateEventRequest defines what the frontend sends
 type CreateEventRequest struct {
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
@@ -32,7 +31,6 @@ type CreateEventRequest struct {
 	Category    string    `json:"category"`
 }
 
-// Validate Logic
 func (req *CreateEventRequest) Validate() error {
 	if strings.TrimSpace(req.Title) == "" {
 		return errors.New("event title is required")
@@ -53,7 +51,6 @@ func (req *CreateEventRequest) Validate() error {
 }
 
 func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
-	// 1. Get User ID from Token
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	auth0ID := claims.RegisteredClaims.Subject
 
@@ -70,14 +67,12 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Decode Request
 	var req CreateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid body format", http.StatusBadRequest)
 		return
 	}
 
-	// 3. Validate Data
 	if err := req.Validate(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -85,7 +80,6 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Create Event Object
 	event := &store.Event{
 		Title:       req.Title,
 		Description: req.Description,
@@ -96,7 +90,7 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		OrganizerID: user.ID,
 		Status:      "UPCOMING",
 		Visibility:  req.Visibility,
-		Category:    req.Category, // 👈 Mapped Correctly
+		Category:    req.Category,
 	}
 
 	if err := h.Repo.Create(r.Context(), event); err != nil {
@@ -109,7 +103,6 @@ func (h *Handler) HandleCreateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
-	// 1. Parse Request
 	var req struct {
 		CreateEventRequest
 		ID int64 `json:"id"`
@@ -119,7 +112,6 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Security Check
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -131,7 +123,6 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Validate Data
 	if err := req.Validate(); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -139,7 +130,6 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Update DB
 	event := &store.Event{
 		ID:          req.ID,
 		Title:       req.Title,
@@ -149,7 +139,7 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		EndTime:     req.EndTime,
 		Capacity:    req.Capacity,
 		Visibility:  req.Visibility,
-		Category:    req.Category, // 👈 Mapped Correctly
+		Category:    req.Category,
 	}
 
 	if err := h.Repo.Update(r.Context(), event); err != nil {
@@ -222,7 +212,6 @@ func (h *Handler) HandleExportAttendees(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
-	// 🔒 Security: Check Permissions
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -251,7 +240,6 @@ func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
-	// 🔒 Security: Check Permissions
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -304,9 +292,7 @@ func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleAddFeedback allows users to rate and comment on an event
 func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
-	// 1. Get User
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -314,7 +300,6 @@ func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Parse Request
 	var req struct {
 		EventID int64  `json:"event_id"`
 		Rating  int    `json:"rating"`
@@ -325,13 +310,11 @@ func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Validate Rating
 	if req.Rating < 1 || req.Rating > 5 {
 		http.Error(w, "Rating must be between 1 and 5", http.StatusBadRequest)
 		return
 	}
 
-	// 4. Save to DB
 	feedback := &store.Feedback{
 		EventID: req.EventID,
 		UserID:  user.ID,
@@ -348,10 +331,7 @@ func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Feedback submitted successfully"})
 }
 
-// In backend/internal/events/handler.go
-
 func (h *Handler) HandleGetAnalytics(w http.ResponseWriter, r *http.Request) {
-	// 🔒 Security: Check Admin Role
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -363,7 +343,6 @@ func (h *Handler) HandleGetAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get Stats
 	stats, err := h.Repo.GetSystemStats(r.Context())
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)

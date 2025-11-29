@@ -10,7 +10,7 @@ import (
 )
 
 type Handler struct {
-	Repo     *store.EventRepository // reusing EventRepo since we attached methods there
+	Repo     *store.EventRepository
 	UserRepo *store.UserRepository
 }
 

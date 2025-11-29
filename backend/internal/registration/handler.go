@@ -17,8 +17,6 @@ type Handler struct {
 }
 
 func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
-	// 1. Get Event ID from URL query (e.g., ?event_id=1)
-	// Ideally we use a router with params like /events/{id}/register, but query params are easier with stdlib
 	eventIDStr := r.URL.Query().Get("event_id")
 	eventID, err := strconv.ParseInt(eventIDStr, 10, 64)
 	if err != nil {
@@ -26,7 +24,6 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Get User ID from Token
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	auth0ID := claims.RegisteredClaims.Subject
 
@@ -40,10 +37,8 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Call the Business Logic
 	result, err := h.Service.RegisterUserForEvent(r.Context(), user.ID, eventID)
 	if err != nil {
-		// 👇 FIX: Send JSON error instead of plain text
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"message": err.Error()})
@@ -55,11 +50,8 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleCancel(w http.ResponseWriter, r *http.Request) {
-	// 1. Get Event ID
 	eventIDStr := r.URL.Query().Get("event_id")
 	eventID, _ := strconv.ParseInt(eventIDStr, 10, 64)
-
-	// 2. Get User ID
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	auth0ID := claims.RegisteredClaims.Subject
 
@@ -69,7 +61,6 @@ func (h *Handler) HandleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Call Service
 	err = h.Service.CancelRegistration(r.Context(), user.ID, eventID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -83,7 +74,6 @@ func (h *Handler) HandleCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleListMyRegistrations(w http.ResponseWriter, r *http.Request) {
-	// 1. Get User ID from Token
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -91,7 +81,6 @@ func (h *Handler) HandleListMyRegistrations(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// 2. Fetch their events
 	events, err := h.EventRepo.GetUserEvents(r.Context(), user.ID)
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)

@@ -16,8 +16,6 @@ type Handler struct {
 }
 
 func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
-	// 1. Get the claims from the context
-	// Now "jwtmiddleware" is defined because of the import above
 	claims := r.Context().Value(jwtmiddleware.ContextKey{})
 	if claims == nil {
 		http.Error(w, "No token found", http.StatusUnauthorized)
@@ -32,7 +30,6 @@ func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
 
 	auth0ID := validatedClaims.RegisteredClaims.Subject
 
-	// 2. Parse Request Body
 	var req struct {
 		Email string `json:"email"`
 	}
@@ -41,14 +38,12 @@ func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Check if user exists
 	existing, err := h.Repo.GetByOIDCID(r.Context(), auth0ID)
 	if err == nil {
 		json.NewEncoder(w).Encode(existing)
 		return
 	}
 
-	// 4. Create User
 	newUser := &store.User{
 		Email:  req.Email,
 		OIDCID: auth0ID,
@@ -64,14 +59,7 @@ func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newUser)
 }
 
-// HandleUpdateRole allows Admins to promote/demote users
-// Update in backend/internal/users/handler.go
-
-// HandleUpdateRole allows Admins to promote/demote users
-// In backend/internal/users/handler.go
-
 func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
-	// 1. Identify the REQUESTER
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	requesterID := claims.RegisteredClaims.Subject
 
@@ -81,7 +69,6 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🔒 SECURITY CHECK 1: Only Admins can change roles
 	if requester.Role != "Admin" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -91,7 +78,6 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Parse Request
 	var req struct {
 		UserID int64  `json:"user_id"`
 		Role   string `json:"role"`
@@ -101,8 +87,6 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🔒 SECURITY CHECK 2: Prevent modifying the Super Admin
-	// Replace this email with YOUR specific admin email
 	const SuperAdminEmail = "devanshukejriwal24@gmail.com"
 
 	targetUser, err := h.Repo.GetByID(r.Context(), req.UserID)
@@ -120,13 +104,11 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Validate Role Input
 	if req.Role != "Admin" && req.Role != "Organizer" && req.Role != "Member" {
 		http.Error(w, "Invalid role", http.StatusBadRequest)
 		return
 	}
 
-	// 4. Perform Update
 	if err := h.Repo.UpdateRole(r.Context(), req.UserID, req.Role); err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -135,7 +117,6 @@ func (h *Handler) HandleUpdateRole(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Role updated successfully"})
 }
 
-// HandleListUsers returns all users for the admin panel
 func (h *Handler) HandleListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.Repo.ListAll(r.Context())
 	if err != nil {
@@ -148,7 +129,6 @@ func (h *Handler) HandleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
-	// 1. Identify the REQUESTER
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	requesterID := claims.RegisteredClaims.Subject
 
@@ -158,7 +138,6 @@ func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🔒 SECURITY CHECK 1: Only Admins can change active status
 	if requester.Role != "Admin" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -168,7 +147,6 @@ func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Parse Request
 	var req struct {
 		UserID   int64 `json:"user_id"`
 		IsActive bool  `json:"is_active"`
@@ -177,9 +155,6 @@ func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid body", http.StatusBadRequest)
 		return
 	}
-
-	// 🔒 SECURITY CHECK 2: Prevent modifying the Super Admin
-	// Replace this with your actual admin email
 	const SuperAdminEmail = "devanshukejriwal24@gmail.com"
 
 	targetUser, err := h.Repo.GetByID(r.Context(), req.UserID)
@@ -197,7 +172,6 @@ func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Perform Update
 	if err := h.Repo.ToggleActive(r.Context(), req.UserID, req.IsActive); err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return

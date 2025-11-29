@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useToast } from "../context/ToastContext";
-import "./EventDashboard.css"; // Reusing dashboard styles for consistency
+import "./EventDashboard.css";
 
 interface User {
     id: number;
@@ -30,10 +30,7 @@ interface EventAnalytics {
 export default function AdminPanel() {
     const { getAccessTokenSilently, user: authUser } = useAuth0();
     const { showToast } = useToast();
-
-    // Tabs: "ANALYTICS", "USERS", "ATTENDANCE"
     const [activeTab, setActiveTab] = useState("ANALYTICS");
-
     const [users, setUsers] = useState<User[]>([]);
     const [stats, setStats] = useState<SystemStats | null>(null);
     const [events, setEvents] = useState<EventAnalytics[]>([]);
@@ -47,8 +44,6 @@ export default function AdminPanel() {
         fetchEvents();
     }, []);
 
-    // --- FETCHERS ---
-
     const fetchUsers = async () => {
         try {
             const token = await getAccessTokenSilently();
@@ -57,9 +52,12 @@ export default function AdminPanel() {
             });
             if(res.ok) {
                 const data = await res.json();
-                setUsers(data);
-                const me = data.find((u: User) => u.email === authUser?.email);
-                if (me) setCurrentUserRole(me.role);
+                setUsers(data || []);
+
+                if (data) {
+                    const me = data.find((u: User) => u.email === authUser?.email);
+                    if (me) setCurrentUserRole(me.role);
+                }
             }
         } catch (e) { console.error(e); }
     };
@@ -77,15 +75,15 @@ export default function AdminPanel() {
     const fetchEvents = async () => {
         try {
             const token = await getAccessTokenSilently();
-            // Reusing the public list endpoint but it contains the counts we need
             const res = await fetch("http://localhost:8080/api/events", {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            if(res.ok) setEvents(await res.json());
+            if(res.ok) {
+                const data = await res.json();
+                setEvents(data || []);
+            }
         } catch (e) { console.error(e); }
     };
-
-    // --- ACTIONS ---
 
     const updateRole = async (userId: number, newRole: string) => {
         try {
@@ -118,12 +116,12 @@ export default function AdminPanel() {
 
     const canEdit = currentUserRole === "Admin";
 
-    if (currentUserRole && currentUserRole !== "Admin") return null; // Hide if not admin
+    if (currentUserRole && currentUserRole !== "Admin") return null;
 
     return (
-        <div className="dashboard-container" style={{ marginTop: "40px", borderTop: "2px dashed #e5e7eb", paddingTop: "40px" }}>
+        <div className="dashboard-container" style={{ marginTop: "40px", paddingTop: "40px" }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h2 style={{ fontSize: '28px', fontWeight: '800', color: '#111827' }}>🛡️ Admin Portal</h2>
+                <h2 style={{ fontSize: '28px', fontWeight: '800', color: '#111827' }}>Admin Portal</h2>
 
                 {/* Tabs */}
                 <div style={{ display: 'flex', gap: '10px' }}>
@@ -147,7 +145,6 @@ export default function AdminPanel() {
                 </div>
             </div>
 
-            {/* --- TAB 1: ANALYTICS --- */}
             {activeTab === 'ANALYTICS' && stats && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                     <StatCard title="Total Users" value={stats.total_users} color="#3b82f6" icon="👥" />
@@ -158,7 +155,6 @@ export default function AdminPanel() {
                 </div>
             )}
 
-            {/* --- TAB 2: USER MANAGEMENT --- */}
             {activeTab === 'USERS' && (
                 <div className="form-card" style={{ padding: '0', overflow: 'hidden' }}>
                     <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
@@ -211,7 +207,6 @@ export default function AdminPanel() {
                 </div>
             )}
 
-            {/* --- TAB 3: ATTENDANCE / UTILIZATION --- */}
             {activeTab === 'ATTENDANCE' && (
                 <div className="form-card" style={{ padding: '0', overflow: 'hidden' }}>
                     <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
@@ -256,7 +251,6 @@ export default function AdminPanel() {
     );
 }
 
-// Simple Card Component
 function StatCard({ title, value, color, icon }: any) {
     return (
         <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>

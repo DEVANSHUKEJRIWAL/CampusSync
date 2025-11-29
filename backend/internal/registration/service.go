@@ -26,7 +26,6 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 	}
 	defer tx.Rollback()
 
-	// 1. Check if already registered
 	var exists bool
 	err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM registrations WHERE user_id=$1 AND event_id=$2 AND status='REGISTERED')", userID, eventID).Scan(&exists)
 	if err != nil {
@@ -36,7 +35,6 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 		return nil, errors.New("user already registered")
 	}
 
-	// 2. Get Event Details & User Email
 	var capacity int
 	var eventTitle string
 	var userEmail string
@@ -52,7 +50,6 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 		return nil, errors.New("user not found")
 	}
 
-	// Security Check for Private Events
 	if visibility == "PRIVATE" {
 		var isInvited bool
 		err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM invitations WHERE event_id=$1 AND email=$2)", eventID, userEmail).Scan(&isInvited)
@@ -64,16 +61,13 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 		}
 	}
 
-	// 3. Check Capacity
 	var currentCount int
 	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM registrations WHERE event_id=$1 AND status='REGISTERED'", eventID).Scan(&currentCount)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. Decision Logic
 	if currentCount < capacity {
-		// A. REGISTER
 		_, err = tx.ExecContext(ctx,
 			"INSERT INTO registrations (user_id, event_id, status, created_at, updated_at) VALUES ($1, $2, 'REGISTERED', $3, $3)",
 			userID, eventID, time.Now())
@@ -81,7 +75,6 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 			return nil, err
 		}
 
-		// 👇 NEW: Save Notification to Database
 		msg := "Registration Confirmed! You are going to " + eventTitle
 		_, err = tx.ExecContext(ctx, "INSERT INTO notifications (user_id, message) VALUES ($1, $2)", userID, msg)
 		if err != nil {
@@ -92,13 +85,11 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 			return nil, err
 		}
 
-		// Send Email (Async)
 		s.Notifications.SendRegistrationEmail(userEmail, eventTitle)
 
 		return &RegisterResult{Status: "REGISTERED", Message: "You have successfully registered!"}, nil
 
 	} else {
-		// B. WAITLIST
 		_, err = tx.ExecContext(ctx,
 			"INSERT INTO waitlist (user_id, event_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
 			userID, eventID, time.Now())
@@ -106,7 +97,6 @@ func (s *Service) RegisterUserForEvent(ctx context.Context, userID, eventID int6
 			return nil, err
 		}
 
-		// 👇 NEW: Save Notification to Database
 		msg := "You are on the waitlist for " + eventTitle
 		_, err = tx.ExecContext(ctx, "INSERT INTO notifications (user_id, message) VALUES ($1, $2)", userID, msg)
 		if err != nil {
@@ -130,11 +120,9 @@ func (s *Service) CancelRegistration(ctx context.Context, userID, eventID int64)
 	}
 	defer tx.Rollback()
 
-	// 1. Check current status
 	var status string
 	err = tx.QueryRowContext(ctx, "SELECT status FROM registrations WHERE user_id=$1 AND event_id=$2", userID, eventID).Scan(&status)
 	if err == sql.ErrNoRows {
-		// Try to remove from waitlist
 		res, _ := tx.ExecContext(ctx, "DELETE FROM waitlist WHERE user_id=$1 AND event_id=$2", userID, eventID)
 		rows, _ := res.RowsAffected()
 		if rows > 0 {
@@ -145,22 +133,18 @@ func (s *Service) CancelRegistration(ctx context.Context, userID, eventID int64)
 		return err
 	}
 
-	// 2. Delete the registration
 	_, err = tx.ExecContext(ctx, "DELETE FROM registrations WHERE user_id=$1 AND event_id=$2", userID, eventID)
 	if err != nil {
 		return err
 	}
 
-	// 3. Automatic Promotion Logic
 	if status == "REGISTERED" {
 		var nextUserID int64
-		// Find first person in waitlist
 		err := tx.QueryRowContext(ctx,
 			"SELECT user_id FROM waitlist WHERE event_id=$1 ORDER BY created_at ASC LIMIT 1",
 			eventID).Scan(&nextUserID)
 
 		if err == nil {
-			// Promote them
 			_, err = tx.ExecContext(ctx, "DELETE FROM waitlist WHERE user_id=$1 AND event_id=$2", nextUserID, eventID)
 			if err != nil {
 				return err
@@ -173,19 +157,16 @@ func (s *Service) CancelRegistration(ctx context.Context, userID, eventID int64)
 				return err
 			}
 
-			// Get Details for Email
 			var email, title string
 			tx.QueryRowContext(ctx, "SELECT email FROM users WHERE id=$1", nextUserID).Scan(&email)
 			tx.QueryRowContext(ctx, "SELECT title FROM events WHERE id=$1", eventID).Scan(&title)
 
-			// 👇 NEW: Save Notification to Database (This fixes your issue!)
 			msg := "Good news! You have been promoted off the waitlist for " + title
 			_, err = tx.ExecContext(ctx, "INSERT INTO notifications (user_id, message) VALUES ($1, $2)", nextUserID, msg)
 			if err != nil {
 				return err
 			}
 
-			// Send Email
 			s.Notifications.SendRegistrationEmail(email, title+" (Moved off Waitlist!)")
 		} else if err != sql.ErrNoRows {
 			return err

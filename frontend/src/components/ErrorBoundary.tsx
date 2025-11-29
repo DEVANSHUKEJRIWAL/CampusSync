@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import {Component, type ErrorInfo, type ReactNode} from 'react';
 
 interface Props {
     children: ReactNode;
@@ -12,11 +12,11 @@ interface State {
 class ErrorBoundary extends Component<Props, State> {
     constructor(props: Props) {
         super(props);
-        this.state = { hasError: false, error: null };
+        this.state = {hasError: false, error: null};
     }
 
     static getDerivedStateFromError(error: Error): State {
-        return { hasError: true, error };
+        return {hasError: true, error};
     }
 
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -37,19 +37,18 @@ class ErrorBoundary extends Component<Props, State> {
                     color: '#1f2937',
                     textAlign: 'center',
                     padding: '20px',
-                    position: 'fixed', /* Ensure it covers everything */
+                    position: 'fixed',
                     top: 0,
                     left: 0,
                     zIndex: 9999
                 }}>
-                    <h1 style={{ fontSize: '3rem', marginBottom: '10px', marginTop: 0 }}>😕 Oops!</h1>
-                    <h2 style={{ fontSize: '1.5rem', marginBottom: '20px' }}>Something went wrong.</h2>
-                    <p style={{ maxWidth: '500px', marginBottom: '30px', color: '#6b7280' }}>
+                    <h1 style={{fontSize: '3rem', marginBottom: '10px', marginTop: 0}}>😕 Oops!</h1>
+                    <h2 style={{fontSize: '1.5rem', marginBottom: '20px'}}>Something went wrong.</h2>
+                    <p style={{maxWidth: '500px', marginBottom: '30px', color: '#6b7280'}}>
                         We encountered an unexpected error. Please try refreshing the page.
                     </p>
                     <button
                         onClick={() => {
-                            // Optional: Clear local storage or state if needed
                             window.location.reload();
                         }}
                         style={{
@@ -66,7 +65,6 @@ class ErrorBoundary extends Component<Props, State> {
                         Refresh Page
                     </button>
 
-                    {/* Always show error details in the UI for debugging if local */}
                     {this.state.error && (
                         <div style={{
                             marginTop: '40px',

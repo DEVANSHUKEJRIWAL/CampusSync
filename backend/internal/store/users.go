@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// User represents a row in the users table
 type User struct {
 	ID        int64     `json:"id"`
 	Email     string    `json:"email"`
@@ -17,7 +16,6 @@ type User struct {
 	IsActive  bool      `json:"is_active"`
 }
 
-// UserRepository handles database interactions for users
 type UserRepository struct {
 	db *sql.DB
 }
@@ -26,14 +24,13 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// Create inserts a new user into the database
 func (r *UserRepository) Create(ctx context.Context, user *User) error {
 	query := `
 		INSERT INTO users (email, oidc_id, role, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at, updated_at
 	`
-	// Use current time
+
 	now := time.Now()
 
 	return r.db.QueryRowContext(
@@ -47,7 +44,6 @@ func (r *UserRepository) Create(ctx context.Context, user *User) error {
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 }
 
-// GetByOIDCID finds a user by their Auth0 ID
 func (r *UserRepository) GetByOIDCID(ctx context.Context, oidcID string) (*User, error) {
 	query := `SELECT id, email, oidc_id, role, created_at, updated_at FROM users WHERE oidc_id = $1`
 
@@ -84,7 +80,6 @@ func (r *UserRepository) ListAll(ctx context.Context) ([]*User, error) {
 	var users []*User
 	for rows.Next() {
 		var u User
-		// 👇 MUST SCAN INTO &u.IsActive
 		if err := rows.Scan(&u.ID, &u.Email, &u.OIDCID, &u.Role, &u.CreatedAt, &u.UpdatedAt, &u.IsActive); err != nil {
 			return nil, err
 		}

@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import '../App.css'; // Ensure CSS is loaded
+import {createContext, useContext, useState, useEffect, type ReactNode} from 'react';
+import '../App.css';
 
 type ToastType = 'success' | 'error';
 
@@ -17,7 +17,7 @@ export const useToast = () => {
     return context;
 };
 
-export const ToastProvider = ({ children }: { children: ReactNode }) => {
+export const ToastProvider = ({children}: { children: ReactNode }) => {
     const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
     useEffect(() => {
@@ -28,13 +28,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     }, [toast]);
 
     const showToast = (message: string, type: ToastType) => {
-        setToast({ message, type });
+        setToast({message, type});
     };
 
     return (
-        <ToastContext.Provider value={{ showToast }}>
+        <ToastContext.Provider value={{showToast}}>
             {children}
-            {/* Render the Toast UI globally here */}
             {toast && (
                 <div className="toast-container">
                     <div className={`toast ${toast.type === "success" ? "toast-success" : "toast-error"}`}>

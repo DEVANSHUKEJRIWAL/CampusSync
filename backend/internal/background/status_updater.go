@@ -31,7 +31,6 @@ func (s *StatusUpdater) updateStatuses() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 1. Mark UPCOMING events as IN_PROGRESS
 	queryInProgress := `
 		UPDATE events 
 		SET status = 'IN_PROGRESS', updated_at = NOW()
@@ -45,7 +44,6 @@ func (s *StatusUpdater) updateStatuses() {
 		rows1, _ = res1.RowsAffected()
 	}
 
-	// 2. Mark events as COMPLETED
 	queryCompleted := `
 		UPDATE events 
 		SET status = 'COMPLETED', updated_at = NOW()

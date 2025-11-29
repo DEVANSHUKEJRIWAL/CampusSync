@@ -18,8 +18,6 @@ import (
 )
 
 func main() {
-	// 1. Database Connection
-	// Check if running in Docker (Env var set), otherwise use Localhost
 	dsn := os.Getenv("DB_DSN")
 	if dsn == "" {
 		dsn = "postgres://postgres:password@127.0.0.1:5432/cems?sslmode=disable"
@@ -35,17 +33,13 @@ func main() {
 	updater.Start()
 	log.Println("⏰ Background Status Updater started")
 
-	// 2. Initialize Repositories & Handlers
 	userRepo := store.NewUserRepository(db)
 	eventRepo := store.NewEventRepository(db)
-
 	notifyService := notifications.NewService()
-
 	regService := &registration.Service{
 		DB:            db,
 		Notifications: notifyService,
 	}
-
 	eventHandler := &events.Handler{Repo: eventRepo, UserRepo: userRepo}
 	userHandler := &users.Handler{Repo: userRepo}
 	regHandler := &registration.Handler{
@@ -63,20 +57,14 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(2 * time.Second)
 	noteHandler := &notifications.Handler{Repo: eventRepo, UserRepo: userRepo}
 
-	// Public Routes
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "db": "connected"})
 	})
 
-	// 3. API Routes (Protected)
 	apiMux := http.NewServeMux()
-
-	// User Routes
 	apiMux.HandleFunc("POST /users/sync", userHandler.HandleSyncUser)
-
-	// Event Routes
 	apiMux.HandleFunc("POST /events", eventHandler.HandleCreateEvent)
 	apiMux.HandleFunc("GET /events", eventHandler.HandleListEvents)
 	apiMux.HandleFunc("POST /events/invite", eventHandler.HandleInviteUser)
@@ -84,25 +72,19 @@ func main() {
 	apiMux.HandleFunc("GET /events/export", eventHandler.HandleExportAttendees)
 	apiMux.HandleFunc("PUT /events", eventHandler.HandleUpdateEvent)
 	apiMux.HandleFunc("POST /events/invite/bulk", eventHandler.HandleBulkInvite)
-
-	// Registration Routes
 	apiMux.Handle("POST /registrations", rateLimiter.LimitMiddleware(http.HandlerFunc(regHandler.HandleRegister)))
 	apiMux.HandleFunc("DELETE /registrations", regHandler.HandleCancel)
 	apiMux.HandleFunc("GET /registrations/me", regHandler.HandleListMyRegistrations)
 	apiMux.HandleFunc("POST /events/feedback", eventHandler.HandleAddFeedback)
 	apiMux.HandleFunc("GET /notifications", noteHandler.HandleListNotifications)
 	apiMux.HandleFunc("POST /notifications/read", noteHandler.HandleMarkRead)
-
-	// Admin Routes
 	apiMux.HandleFunc("GET /admin/users", userHandler.HandleListUsers)
 	apiMux.HandleFunc("PATCH /admin/users/role", userHandler.HandleUpdateRole)
 	apiMux.HandleFunc("PATCH /admin/users/active", userHandler.HandleToggleActive)
 	apiMux.HandleFunc("GET /admin/analytics", eventHandler.HandleGetAnalytics)
 
-	// Mount API routes behind Auth Middleware
 	mux.Handle("/api/", http.StripPrefix("/api", authMiddleware(apiMux)))
 
-	// 6. Start Server
 	srv := &http.Server{
 		Addr:         ":8080",
 		Handler:      auth.EnableCORS(mux),
