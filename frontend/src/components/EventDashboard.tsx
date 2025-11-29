@@ -250,7 +250,7 @@ export default function EventDashboard() {
                 headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
                 body: JSON.stringify({event_id: inviteModalId, email: inviteEmail})
             });
-            if (res.ok) showToast("Invited!", "success"); else showToast("❌ Failed.", "error");
+            if (res.ok) showToast("Invited!", "success"); else showToast("Failed.", "error");
         } catch (err) {
             showToast("Error sending invitation.", "error");
         } finally {
@@ -287,7 +287,7 @@ export default function EventDashboard() {
                     fetchEvents(searchQuery, searchLocation, searchCategory);
 
                 } else {
-                    showToast("❌ Failed to upload.", "error");
+                    showToast("Failed to upload.", "error");
                 }
             } catch (err) {
                 showToast("Upload error.", "error");
@@ -311,7 +311,7 @@ export default function EventDashboard() {
                 body: JSON.stringify({event_id: feedbackModalId, rating: feedbackRating, comment: feedbackComment})
             });
             if (res.ok) {
-                showToast("🌟 Feedback submitted!", "success");
+                showToast("Feedback submitted!", "success");
                 setFeedbackModalId(null);
             } else showToast("Failed.", "error");
         } catch (error) {
@@ -473,7 +473,7 @@ export default function EventDashboard() {
             {canManage && (
                 <form onSubmit={handleSubmit} className={`form-card ${editingEventId ? "editing" : ""}`}>
                     <div className="form-header">
-                        <h3>{editingEventId ? "✏️ Edit Event" : "➕ Create New Event"}</h3>
+                        <h3>{editingEventId ? "Edit Event" : "➕ Create New Event"}</h3>
                     </div>
                     <div className="form-body">
                         {formError && <div className="alert-box alert-error">{formError}</div>}

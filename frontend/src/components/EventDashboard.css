@@ -4,8 +4,10 @@
     padding: 40px 20px;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     color: #1f2937;
-    background-color: #f8fafc;
+    /*background-color: #f8fafc;*/
     min-height: 100vh;
+    background-color: transparent;
+
 }
 
 .dashboard-header {

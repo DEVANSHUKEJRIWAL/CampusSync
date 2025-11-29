@@ -30,16 +30,11 @@ interface EventAnalytics {
 export default function AdminPanel() {
     const { getAccessTokenSilently, user: authUser } = useAuth0();
     const { showToast } = useToast();
-
-    // Tabs
     const [activeTab, setActiveTab] = useState("ANALYTICS");
-
     const [users, setUsers] = useState<User[]>([]);
     const [stats, setStats] = useState<SystemStats | null>(null);
     const [events, setEvents] = useState<EventAnalytics[]>([]);
     const [currentUserRole, setCurrentUserRole] = useState("");
-
-    // Modal State
     const [confirmModal, setConfirmModal] = useState<{id: number, active: boolean} | null>(null);
 
     const SUPER_ADMIN_EMAIL = "devanshukejriwal24@gmail.com";
@@ -50,7 +45,6 @@ export default function AdminPanel() {
         fetchEvents();
     }, []);
 
-    // --- FETCHERS ---
     const fetchUsers = async () => {
         try {
             const token = await getAccessTokenSilently();
@@ -91,7 +85,6 @@ export default function AdminPanel() {
         } catch (e) { console.error(e); }
     };
 
-    // --- ACTIONS ---
     const updateRole = async (userId: number, newRole: string) => {
         try {
             const token = await getAccessTokenSilently();
@@ -106,12 +99,10 @@ export default function AdminPanel() {
         } catch (error) { showToast("Update failed", "error"); }
     };
 
-    // 👇 1. Open Modal (No Browser Alert)
     const initiateToggle = (userId: number, isActive: boolean) => {
         setConfirmModal({ id: userId, active: isActive });
     };
 
-    // 👇 2. Execute Logic (Called by Modal "Yes" button)
     const confirmToggle = async () => {
         if (!confirmModal) return;
         try {
@@ -127,7 +118,7 @@ export default function AdminPanel() {
         } catch (error) {
             showToast("Action failed", "error");
         } finally {
-            setConfirmModal(null); // Close modal
+            setConfirmModal(null);
         }
     };
 
@@ -138,7 +129,7 @@ export default function AdminPanel() {
     return (
         <div className="dashboard-container" style={{ marginTop: "40px", paddingTop: "40px" }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h2 style={{ fontSize: '28px', fontWeight: '800', color: '#111827' }}>🛡️ Admin Portal</h2>
+                <h2 style={{ fontSize: '28px', fontWeight: '800', color: '#111827' }}>Admin Portal</h2>
 
                 <div style={{ display: 'flex', gap: '10px' }}>
                     {['ANALYTICS', 'USERS', 'ATTENDANCE'].map(tab => (
@@ -161,7 +152,6 @@ export default function AdminPanel() {
                 </div>
             </div>
 
-            {/* TAB 1: ANALYTICS */}
             {activeTab === 'ANALYTICS' && stats && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                     <StatCard title="Total Users" value={stats.total_users} color="#3b82f6" icon="👥" />
@@ -172,7 +162,6 @@ export default function AdminPanel() {
                 </div>
             )}
 
-            {/* TAB 2: USERS */}
             {activeTab === 'USERS' && (
                 <div className="form-card" style={{ padding: '0', overflow: 'hidden' }}>
                     <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
@@ -211,7 +200,6 @@ export default function AdminPanel() {
                                         <option value="Admin">Admin</option>
                                     </select>
 
-                                    {/* 👇 3. UPDATED: Click calls initiateToggle, NOT confirm() */}
                                     <button
                                         onClick={() => initiateToggle(u.id, !u.is_active)}
                                         disabled={!canEdit || u.email === SUPER_ADMIN_EMAIL}
@@ -227,7 +215,6 @@ export default function AdminPanel() {
                 </div>
             )}
 
-            {/* TAB 3: ATTENDANCE */}
             {activeTab === 'ATTENDANCE' && (
                 <div className="form-card" style={{ padding: '0', overflow: 'hidden' }}>
                     <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
@@ -269,7 +256,6 @@ export default function AdminPanel() {
                 </div>
             )}
 
-            {/* 👇 Confirmation Modal for Disable/Enable */}
             {confirmModal && (
                 <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
                     <div className="modal-content" style={{ maxWidth: '400px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>

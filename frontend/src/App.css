@@ -1,11 +1,20 @@
 .app-layout {
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+
+    background-color: #eef2ff;
+    background-image:
+            radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
+            radial-gradient(at 100% 100%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+            radial-gradient(at 0% 100%, rgba(236, 72, 153, 0.15) 0px, transparent 50%);
+    background-attachment: fixed;
+    background-size: cover;
 }
 
 .navbar {
-    background-color: rgba(255, 255, 255, 0.9);
+    background-color: rgba(255, 255, 255, 0.3);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border-color);
     position: sticky;
@@ -13,6 +22,7 @@
     z-index: 100;
     padding: 0.75rem 0;
 }
+
 
 .nav-container {
     max-width: 1280px;
@@ -26,7 +36,7 @@
 .navbar-brand {
     font-size: 1.5rem;
     font-weight: 800;
-    color: var(--text-main);
+    color: #1e293b;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -34,7 +44,7 @@
 }
 
 .navbar-brand span {
-    background: linear-gradient(135deg, var(--primary), #818cf8);
+    background: linear-gradient(135deg, #4f46e5, #8b5cf6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -46,19 +56,19 @@
 }
 
 .user-pill {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: white;
-    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.5);
     padding: 6px 12px;
     border-radius: 100px;
     font-size: 0.85rem;
-    color: var(--text-secondary);
-    box-shadow: var(--shadow-sm);
+    color: #475569;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    backdrop-filter: blur(4px);
 }
 
-.user-pill strong { color: var(--text-main); font-weight: 600; }
+.user-pill strong { color: #0f172a; font-weight: 600; }
 
 .btn-nav {
     background: white;
@@ -145,3 +155,71 @@
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* --- Main Layout & Glass Background --- */
+
+
+/* --- Glass Navbar --- */
+/*.navbar {*/
+/*    background: rgba(255, 255, 255, 0.6); !* Semi-transparent *!*/
+/*    backdrop-filter: blur(16px);           !* The Glass Effect *!*/
+/*    -webkit-backdrop-filter: blur(16px);   !* Safari support *!*/
+/*    border-bottom: 1px solid rgba(255, 255, 255, 0.3);*/
+/*    padding: 0.75rem 2rem;*/
+/*    display: flex;*/
+/*    justify-content: space-between;*/
+/*    align-items: center;*/
+/*    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);*/
+/*    position: sticky;*/
+/*    top: 0;*/
+/*    z-index: 100;*/
+/*}*/
+
+
+/* Glass User Pill */
+
+/* Nav Buttons */
+.nav-btn {
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.btn-login {
+    background: #4f46e5;
+    color: white;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+
+.btn-login:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
+}
+
+.btn-logout {
+    background: rgba(255, 255, 255, 0.5);
+    color: #64748b;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.btn-logout:hover {
+    background: #fee2e2;
+    color: #ef4444;
+    border-color: #fecaca;
+}
+
+.btn-sync {
+    background: rgba(255, 255, 255, 0.5);
+    color: #4f46e5;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.btn-sync:hover {
+    background: #e0e7ff;
+}
+
+.main-content { flex: 1; width: 100%; }
