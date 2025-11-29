@@ -63,7 +63,25 @@ CampusSync is a full-stack **Campus Event Management System (CEMS)** that centra
 ## ⚙️ Configuration
 
 ### Auth0 (required)
-Create an Auth0 Application and set the following values in the frontend and backend.
+#### Create an Auth0 Application and set the following values in the frontend and backend.
+```
+Go to https://manage.auth0.com
+Applications → Applications → Create Application
+Type: Single Page Web Application
+Stack/Framework: React (doesn’t matter, just means SPA).
+```
+#### Create Auth0 API
+```
+You need this so the backend can verify tokens.
+Auth0 → Applications → APIs
+Create API
+Give it:
+Name: CEMS API
+Identifier: http://localhost:8080
+Signing Algorithm: RS256
+Save.
+```
+Find the domain(YOUR_AUTH0_DOMAIN) and clientID(YOUR_CLIENT_ID) on the Application → Settings
 
 **Frontend** — `frontend/src/main.tsx`:
 ```ts
