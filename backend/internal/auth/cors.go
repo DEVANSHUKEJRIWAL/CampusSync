@@ -7,8 +7,8 @@ func EnableCORS(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 
 		allowedOrigins := map[string]bool{
-			"http://localhost:5173":               true,
-			"https://campus-sync-nine.vercel.app": true,
+			"http://localhost:5173":             true,
+			"https://umdcampus-sync.vercel.app": true,
 		}
 
 		if allowedOrigins[origin] {
