@@ -40,7 +40,7 @@ func main() {
 		DB:            db,
 		Notifications: notifyService,
 	}
-	eventHandler := &events.Handler{Repo: eventRepo, UserRepo: userRepo}
+	eventHandler := &events.Handler{Repo: eventRepo, UserRepo: userRepo, Notifications: notifyService}
 	userHandler := &users.Handler{Repo: userRepo}
 	regHandler := &registration.Handler{
 		Service:   regService,

@@ -56,7 +56,6 @@ func (r *EventRepository) Create(ctx context.Context, e *Event) error {
 		RETURNING id, created_at, updated_at
 	`
 	now := time.Now()
-
 	return r.db.QueryRowContext(ctx, query,
 		e.Title, e.Description, e.Location, e.StartTime, e.EndTime, e.Capacity, e.OrganizerID,
 		e.Status, e.Visibility, e.Category,
@@ -80,11 +79,7 @@ func (r *EventRepository) Search(ctx context.Context, query, location, category 
 	sqlQuery := `
 		SELECT e.id, e.title, e.description, e.location, e.start_time, e.end_time, 
 		       e.capacity, e.organizer_id, e.status, e.visibility, e.category,
-		       (SELECT COUNT(*) FROM (
-                   SELECT u.email FROM registrations r JOIN users u ON r.user_id = u.id WHERE r.event_id = e.id AND r.status = 'REGISTERED'
-                   UNION
-                   SELECT email FROM invitations WHERE event_id = e.id
-               ) as unique_spots) as registered_count
+		       (SELECT COUNT(*) FROM registrations WHERE event_id = e.id AND status = 'REGISTERED') as registered_count
 		FROM events e
 		WHERE 1=1
 	`
@@ -144,7 +139,6 @@ func (r *EventRepository) AddFeedback(ctx context.Context, f *Feedback) error {
 
 func (r *EventRepository) GetSystemStats(ctx context.Context) (*SystemStats, error) {
 	stats := &SystemStats{}
-
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&stats.TotalUsers); err != nil {
 		return nil, err
 	}
@@ -157,7 +151,6 @@ func (r *EventRepository) GetSystemStats(ctx context.Context) (*SystemStats, err
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM registrations WHERE status = 'REGISTERED'").Scan(&stats.TotalRegistrations); err != nil {
 		return nil, err
 	}
-
 	var avg sql.NullFloat64
 	if err := r.db.QueryRowContext(ctx, "SELECT AVG(rating) FROM event_feedback").Scan(&avg); err != nil {
 		return nil, err
@@ -167,7 +160,6 @@ func (r *EventRepository) GetSystemStats(ctx context.Context) (*SystemStats, err
 	} else {
 		stats.AvgRating = 0.0
 	}
-
 	return stats, nil
 }
 
@@ -205,6 +197,7 @@ func (r *EventRepository) GetAttendees(ctx context.Context, eventID int64) ([]*A
 		SELECT 0 as id, email, 'INVITED' as status, created_at
 		FROM invitations
 		WHERE event_id = $1
+		-- Don't show "Invited" if they already registered
 		AND email NOT IN (SELECT u.email FROM registrations r JOIN users u ON r.user_id = u.id WHERE r.event_id = $1)
 		
 		ORDER BY 3 ASC, 4 ASC
@@ -239,28 +232,6 @@ func (r *EventRepository) BulkInvite(ctx context.Context, eventID int64, emails 
 	}
 	defer tx.Rollback()
 
-	var capacity int
-	if err := tx.QueryRowContext(ctx, "SELECT capacity FROM events WHERE id = $1", eventID).Scan(&capacity); err != nil {
-		return 0, err
-	}
-
-	var currentCount int
-	queryCount := `
-		SELECT COUNT(*) FROM (
-			SELECT email FROM invitations WHERE event_id = $1
-			UNION
-			SELECT u.email FROM registrations r JOIN users u ON r.user_id = u.id WHERE r.event_id = $1 AND r.status = 'REGISTERED'
-		) as total
-	`
-	if err := tx.QueryRowContext(ctx, queryCount, eventID).Scan(&currentCount); err != nil {
-		return 0, err
-	}
-
-	spotsLeft := capacity - currentCount
-	if spotsLeft <= 0 {
-		return 0, nil
-	}
-
 	stmt, err := tx.PrepareContext(ctx, "INSERT INTO invitations (event_id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return 0, err
@@ -269,20 +240,14 @@ func (r *EventRepository) BulkInvite(ctx context.Context, eventID int64, emails 
 
 	count := 0
 	for _, email := range emails {
-		if count >= spotsLeft {
-			break
-		}
 		if email == "" {
 			continue
 		}
-		res, err := stmt.ExecContext(ctx, eventID, email)
+		_, err := stmt.ExecContext(ctx, eventID, email)
 		if err != nil {
 			return count, err
 		}
-		rows, _ := res.RowsAffected()
-		if rows > 0 {
-			count++
-		}
+		count++
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -312,7 +277,6 @@ func (r *EventRepository) GetUserEvents(ctx context.Context, userID int64) ([]*U
 		return nil, err
 	}
 	defer rows.Close()
-
 	var events []*UserEvent
 	for rows.Next() {
 		var e UserEvent

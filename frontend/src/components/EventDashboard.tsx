@@ -13,6 +13,8 @@ import "react-datepicker/dist/react-datepicker.css";
 import CheckInScanner from "./CheckInScanner.tsx";
 import "./EventDashboard.css";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+
 interface Event {
     id: number;
     title: string;
@@ -76,7 +78,7 @@ export default function EventDashboard() {
         if (!user?.email) return;
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/users/sync", {
+            const res = await fetch(`${API_URL}/api/users/sync`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
                 body: JSON.stringify({email: user.email}),
@@ -93,7 +95,7 @@ export default function EventDashboard() {
     const fetchNotifications = async () => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/notifications", {headers: {Authorization: `Bearer ${token}`}});
+            const res = await fetch(`${API_URL}/api/notifications`, {headers: {Authorization: `Bearer ${token}`}});
             if (res.ok) {
                 const data = await res.json();
                 setNotifications(data || []);
@@ -106,7 +108,7 @@ export default function EventDashboard() {
     const markNotificationsRead = async () => {
         try {
             const token = await getAccessTokenSilently();
-            await fetch("http://localhost:8080/api/notifications/read", {
+            await fetch(`${API_URL}/api/notifications/read`, {
                 method: "POST",
                 headers: {Authorization: `Bearer ${token}`}
             });
@@ -124,7 +126,7 @@ export default function EventDashboard() {
             if (query) params.append("q", query);
             if (loc) params.append("location", loc);
             if (cat && cat !== "All") params.append("category", cat);
-            const res = await fetch(`http://localhost:8080/api/events?${params.toString()}`, {headers: {Authorization: `Bearer ${token}`}});
+            const res = await fetch(`${API_URL}/api/events?${params.toString()}`, {headers: {Authorization: `Bearer ${token}`}});
             if (res.ok) {
                 const data = await res.json();
                 setEvents(data || []);
@@ -139,7 +141,7 @@ export default function EventDashboard() {
     const fetchMyEvents = async () => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/registrations/me", { headers: { Authorization: `Bearer ${token}` } });
+            const res = await fetch(`${API_URL}/api/registrations/me`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.ok) {
                 const data = await res.json();
                 setMyEvents(data || []);
@@ -150,7 +152,7 @@ export default function EventDashboard() {
     const fetchAttendees = async (id: number) => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch(`http://localhost:8080/api/events/attendees?event_id=${id}`, {headers: {Authorization: `Bearer ${token}`}});
+            const res = await fetch(`${API_URL}/api/events/attendees?event_id=${id}`, {headers: {Authorization: `Bearer ${token}`}});
             if (res.ok) {
                 setAttendees(await res.json() || []);
                 setSelectedEventId(id);
@@ -163,7 +165,7 @@ export default function EventDashboard() {
     const downloadCsv = async (id: number) => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch(`http://localhost:8080/api/events/export?event_id=${id}`, {headers: {Authorization: `Bearer ${token}`}});
+            const res = await fetch(`${API_URL}/api/events/export?event_id=${id}`, {headers: {Authorization: `Bearer ${token}`}});
             const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -188,7 +190,7 @@ export default function EventDashboard() {
     const handleRegister = async (eventId: number) => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch(`http://localhost:8080/api/registrations?event_id=${eventId}`, {
+            const res = await fetch(`${API_URL}/api/registrations?event_id=${eventId}`, {
                 method: "POST",
                 headers: {Authorization: `Bearer ${token}`}
             });
@@ -217,7 +219,7 @@ export default function EventDashboard() {
         if (!cancelModalId) return;
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch(`http://localhost:8080/api/registrations?event_id=${cancelModalId}`, {
+            const res = await fetch(`${API_URL}/api/registrations?event_id=${cancelModalId}`, {
                 method: "DELETE",
                 headers: {Authorization: `Bearer ${token}`}
             });
@@ -245,7 +247,7 @@ export default function EventDashboard() {
         if (!inviteModalId || !inviteEmail) return;
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/events/invite", {
+            const res = await fetch(`${API_URL}/api/events/invite`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
                 body: JSON.stringify({event_id: inviteModalId, email: inviteEmail})
@@ -273,7 +275,7 @@ export default function EventDashboard() {
 
             try {
                 const token = await getAccessTokenSilently();
-                const res = await fetch("http://localhost:8080/api/events/invite/bulk", {
+                const res = await fetch(`${API_URL}/api/events/invite/bulk`, {
                     method: "POST",
                     headers: { Authorization: `Bearer ${token}` },
                     body: formData,
@@ -282,10 +284,7 @@ export default function EventDashboard() {
                 if (res.ok) {
                     const data = await res.json();
                     showToast(`Success! Processed ${data.count} emails.`, "success");
-
-                    // 👇 ADD THIS LINE to refresh the "Spots Filled" count immediately
                     fetchEvents(searchQuery, searchLocation, searchCategory);
-
                 } else {
                     showToast("Failed to upload.", "error");
                 }
@@ -305,7 +304,7 @@ export default function EventDashboard() {
         if (!feedbackModalId) return;
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/events/feedback", {
+            const res = await fetch(`${API_URL}/api/events/feedback`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
                 body: JSON.stringify({event_id: feedbackModalId, rating: feedbackRating, comment: feedbackComment})
@@ -382,7 +381,7 @@ export default function EventDashboard() {
             };
 
             const method = editingEventId ? "PUT" : "POST";
-            const res = await fetch("http://localhost:8080/api/events", {
+            const res = await fetch(`${API_URL}/api/events`, {
                 method: method,
                 headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
                 body: JSON.stringify(payload),

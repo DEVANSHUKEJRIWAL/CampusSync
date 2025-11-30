@@ -10,14 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/notifications"
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/store"
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
 	"github.com/auth0/go-jwt-middleware/v2/validator"
 )
 
 type Handler struct {
-	Repo     *store.EventRepository
-	UserRepo *store.UserRepository
+	Repo          *store.EventRepository
+	UserRepo      *store.UserRepository
+	Notifications *notifications.Service
 }
 
 type CreateEventRequest struct {
@@ -285,6 +287,14 @@ func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
+
+	go func() {
+		for _, email := range emails {
+			if email != "" {
+				h.Notifications.SendInviteEmail(email, "Exclusive Campus Event")
+			}
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "Bulk invite processed",

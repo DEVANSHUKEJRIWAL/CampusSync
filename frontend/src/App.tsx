@@ -5,6 +5,8 @@ import EventDashboard from "./components/EventDashboard";
 import AdminPanel from "./components/AdminPanel";
 import "./App.css";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+
 function App() {
     const { loginWithRedirect, logout, user, isAuthenticated, getAccessTokenSilently, isLoading } = useAuth0();
     const { showToast } = useToast();
@@ -19,7 +21,7 @@ function App() {
     const syncUserWithBackend = async (silent = false) => {
         try {
             const t = await getAccessTokenSilently();
-            const response = await fetch("http://localhost:8080/api/users/sync", {
+            const response = await fetch(`${API_URL}/api/users/sync`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t}` },
                 body: JSON.stringify({ email: user?.email })

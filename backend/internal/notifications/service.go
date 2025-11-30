@@ -27,3 +27,7 @@ func (s *Service) SendWaitlistEmail(toEmail, eventTitle string) {
 		log.Printf("⚠️ [EMAIL SENT] To: %s | Subject: Added to Waitlist | Body: You are on the waitlist for %s.", toEmail, eventTitle)
 	}()
 }
+
+func (s *Service) SendInviteEmail(toEmail, eventTitle string) {
+	log.Printf("📧 [EMAIL SENT] To: %s | Subject: You're Invited! | Body: You have been invited to join '%s'. Log in to CampusSync to register.", toEmail, eventTitle)
+}

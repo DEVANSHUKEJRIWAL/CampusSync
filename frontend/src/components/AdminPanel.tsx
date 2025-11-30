@@ -38,6 +38,7 @@ export default function AdminPanel() {
     const [confirmModal, setConfirmModal] = useState<{id: number, active: boolean} | null>(null);
 
     const SUPER_ADMIN_EMAIL = "devanshukejriwal24@gmail.com";
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
     useEffect(() => {
         fetchUsers();
@@ -48,7 +49,7 @@ export default function AdminPanel() {
     const fetchUsers = async () => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/admin/users", {
+            const res = await fetch(`${API_URL}/api/admin/users`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if(res.ok) {
@@ -65,7 +66,7 @@ export default function AdminPanel() {
     const fetchStats = async () => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/admin/analytics", {
+            const res = await fetch(`${API_URL}/api/admin/analytics`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if(res.ok) setStats(await res.json());
@@ -75,7 +76,7 @@ export default function AdminPanel() {
     const fetchEvents = async () => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/events", {
+            const res = await fetch(`${API_URL}/api/events`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if(res.ok) {
@@ -88,7 +89,7 @@ export default function AdminPanel() {
     const updateRole = async (userId: number, newRole: string) => {
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/admin/users/role", {
+            const res = await fetch(`${API_URL}/api/admin/users/role`, {
                 method: "PATCH",
                 headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                 body: JSON.stringify({ user_id: userId, role: newRole })
@@ -107,7 +108,7 @@ export default function AdminPanel() {
         if (!confirmModal) return;
         try {
             const token = await getAccessTokenSilently();
-            const res = await fetch("http://localhost:8080/api/admin/users/active", {
+            const res = await fetch(`${API_URL}/api/admin/users/active`, {
                 method: "PATCH",
                 headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
                 body: JSON.stringify({ user_id: confirmModal.id, is_active: confirmModal.active })
