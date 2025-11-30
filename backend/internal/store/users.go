@@ -26,24 +26,17 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, user *User) error {
 	query := `
-		INSERT INTO users (email, oidc_id, role, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at
+		INSERT INTO users (email, oidc_id, role, created_at, updated_at, is_active)
+		VALUES ($1, $2, $3, $4, $5, true)
+		ON CONFLICT (email) DO UPDATE
+		SET updated_at = $5
+		RETURNING id, role, created_at, updated_at, is_active
 	`
-
 	now := time.Now()
-
-	return r.db.QueryRowContext(
-		ctx,
-		query,
-		user.Email,
-		user.OIDCID,
-		user.Role,
-		now,
-		now,
-	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+	return r.db.QueryRowContext(ctx, query, user.Email, user.OIDCID, user.Role, now, now).Scan(
+		&user.ID, &user.Role, &user.CreatedAt, &user.UpdatedAt, &user.IsActive,
+	)
 }
-
 func (r *UserRepository) GetByOIDCID(ctx context.Context, oidcID string) (*User, error) {
 	query := `SELECT id, email, oidc_id, role, created_at, updated_at FROM users WHERE oidc_id = $1`
 
