@@ -61,3 +61,8 @@ func (s *StatusUpdater) updateStatuses() {
 		log.Printf("🔄 [Background Job] Status Update: %d started, %d completed.", rows1, rows2)
 	}
 }
+
+// Test_UpdateStatuses is only used in tests.
+func (s *StatusUpdater) Test_UpdateStatuses() {
+	s.updateStatuses()
+}

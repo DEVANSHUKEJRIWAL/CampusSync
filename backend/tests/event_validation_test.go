@@ -1,9 +1,12 @@
-package events
+// tests/event_validation_test.go
+package tests
 
 import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/events"
 )
 
 func TestCreateEventRequest_Validate(t *testing.T) {
@@ -11,13 +14,13 @@ func TestCreateEventRequest_Validate(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		req     CreateEventRequest
+		req     events.CreateEventRequest
 		wantErr bool
 		errMsg  string
 	}{
 		{
-			name: "Valid Request",
-			req: CreateEventRequest{
+			name: "Valid",
+			req: events.CreateEventRequest{
 				Title:      "Tech Talk",
 				Location:   "Room 101",
 				Capacity:   50,
@@ -29,7 +32,7 @@ func TestCreateEventRequest_Validate(t *testing.T) {
 		},
 		{
 			name: "Missing Title",
-			req: CreateEventRequest{
+			req: events.CreateEventRequest{
 				Title:      "",
 				Location:   "Room 101",
 				Capacity:   50,
@@ -41,10 +44,10 @@ func TestCreateEventRequest_Validate(t *testing.T) {
 			errMsg:  "event title is required",
 		},
 		{
-			name: "End Time Before Start",
-			req: CreateEventRequest{
-				Title:      "Bad Time",
-				Location:   "Room 101",
+			name: "End Before Start",
+			req: events.CreateEventRequest{
+				Title:      "Bad",
+				Location:   "Room",
 				Capacity:   50,
 				StartTime:  now.Add(2 * time.Hour),
 				EndTime:    now.Add(1 * time.Hour),
@@ -55,9 +58,9 @@ func TestCreateEventRequest_Validate(t *testing.T) {
 		},
 		{
 			name: "Negative Capacity",
-			req: CreateEventRequest{
-				Title:      "Small Room",
-				Location:   "Room 101",
+			req: events.CreateEventRequest{
+				Title:      "Small",
+				Location:   "Room",
 				Capacity:   -1,
 				StartTime:  now.Add(1 * time.Hour),
 				EndTime:    now.Add(2 * time.Hour),
@@ -66,17 +69,29 @@ func TestCreateEventRequest_Validate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "capacity must be greater than zero",
 		},
+		{
+			name: "Invalid Visibility",
+			req: events.CreateEventRequest{
+				Title:      "Bad",
+				Location:   "Room",
+				Capacity:   50,
+				StartTime:  now.Add(1 * time.Hour),
+				EndTime:    now.Add(2 * time.Hour),
+				Visibility: "INVALID",
+			},
+			wantErr: true,
+			errMsg:  "invalid visibility",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.req.Validate()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-				return
+				t.Fatalf("expected err=%v, got err=%v", tt.wantErr, err)
 			}
 			if tt.wantErr && !strings.Contains(err.Error(), tt.errMsg) {
-				t.Errorf("Validate() error = %v, expected substring %v", err, tt.errMsg)
+				t.Fatalf("expected error to contain %q, got %v", tt.errMsg, err)
 			}
 		})
 	}

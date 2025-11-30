@@ -17,6 +17,6 @@ func NewPostgresDB(dsn string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	log.Println("✅ Successfully connected to the database!")
+	log.Println(" Successfully connected to the database!")
 	return db, nil
 }
