@@ -33,7 +33,14 @@ func (r *UserRepository) Create(ctx context.Context, user *User) error {
 		RETURNING id, role, created_at, updated_at, is_active
 	`
 	now := time.Now()
-	return r.db.QueryRowContext(ctx, query, user.Email, user.OIDCID, user.Role, now, now).Scan(
+
+	return r.db.QueryRowContext(ctx, query,
+		user.Email,
+		user.OIDCID,
+		user.Role,
+		now,
+		now,
+	).Scan(
 		&user.ID, &user.Role, &user.CreatedAt, &user.UpdatedAt, &user.IsActive,
 	)
 }
