@@ -124,6 +124,25 @@ func (r *EventRepository) Search(ctx context.Context, query, location, category 
 	return events, nil
 }
 
+func (r *EventRepository) GetEventByID(ctx context.Context, id int64) (*Event, error) {
+	query := `
+		SELECT e.id, e.title, e.description, e.location, e.start_time, e.end_time, 
+		       e.capacity, e.organizer_id, e.status, e.visibility, e.category,
+		       (SELECT COUNT(*) FROM registrations WHERE event_id = e.id AND status = 'REGISTERED') as registered_count
+		FROM events e
+		WHERE e.id = $1
+	`
+	var e Event
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&e.ID, &e.Title, &e.Description, &e.Location, &e.StartTime, &e.EndTime,
+		&e.Capacity, &e.OrganizerID, &e.Status, &e.Visibility, &e.Category, &e.RegisteredCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 func (r *EventRepository) AddFeedback(ctx context.Context, f *Feedback) error {
 	query := `
 		INSERT INTO event_feedback (event_id, user_id, rating, comment, created_at)
@@ -197,7 +216,6 @@ func (r *EventRepository) GetAttendees(ctx context.Context, eventID int64) ([]*A
 		SELECT 0 as id, email, 'INVITED' as status, created_at
 		FROM invitations
 		WHERE event_id = $1
-		-- Don't show "Invited" if they already registered
 		AND email NOT IN (SELECT u.email FROM registrations r JOIN users u ON r.user_id = u.id WHERE r.event_id = $1)
 		
 		ORDER BY 3 ASC, 4 ASC
@@ -243,11 +261,14 @@ func (r *EventRepository) BulkInvite(ctx context.Context, eventID int64, emails 
 		if email == "" {
 			continue
 		}
-		_, err := stmt.ExecContext(ctx, eventID, email)
+		res, err := stmt.ExecContext(ctx, eventID, email)
 		if err != nil {
 			return count, err
 		}
-		count++
+		rows, _ := res.RowsAffected()
+		if rows > 0 {
+			count++
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

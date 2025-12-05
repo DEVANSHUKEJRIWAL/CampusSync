@@ -1,7 +1,6 @@
 package events
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -22,6 +21,7 @@ type Handler struct {
 	Notifications *notifications.Service
 }
 
+// CreateEventRequest defines what the frontend sends
 type CreateEventRequest struct {
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
@@ -33,6 +33,7 @@ type CreateEventRequest struct {
 	Category    string    `json:"category"`
 }
 
+// Validate Logic
 func (req *CreateEventRequest) Validate() error {
 	if strings.TrimSpace(req.Title) == "" {
 		return errors.New("event title is required")
@@ -120,8 +121,25 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User not found", http.StatusUnauthorized)
 		return
 	}
+
+	// 👇 CHECK: Must be Organizer/Admin
 	if user.Role != "Organizer" && user.Role != "Admin" {
 		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// 👇 CHECK: Ownership (New Logic)
+	existingEvent, err := h.Repo.GetEventByID(r.Context(), req.ID)
+	if err != nil {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+
+	// If NOT Admin AND NOT the owner, block it
+	if user.Role != "Admin" && existingEvent.OrganizerID != user.ID {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"message": "Forbidden: You can only edit events you created."})
 		return
 	}
 
@@ -151,7 +169,7 @@ func (h *Handler) HandleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		msg := "Update: Details for '" + event.Title + "' have changed."
-		h.Repo.NotifyAllAttendees(context.Background(), event.ID, msg)
+		h.Repo.NotifyAllAttendees(r.Context(), event.ID, msg)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -220,6 +238,8 @@ func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User not found", http.StatusUnauthorized)
 		return
 	}
+
+	// Only Organizer/Admin
 	if user.Role != "Organizer" && user.Role != "Admin" {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
@@ -233,6 +253,19 @@ func (h *Handler) HandleInviteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid body", http.StatusBadRequest)
 		return
 	}
+
+	existingEvent, err := h.Repo.GetEventByID(r.Context(), req.EventID)
+	if err != nil {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	if user.Role != "Admin" && existingEvent.OrganizerID != user.ID {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"message": "Forbidden: You can only invite to your own events."})
+		return
+	}
+
 	if err := h.Repo.InviteUser(r.Context(), req.EventID, req.Email); err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -263,6 +296,19 @@ func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid event ID", http.StatusBadRequest)
 		return
 	}
+
+	existingEvent, err := h.Repo.GetEventByID(r.Context(), eventID)
+	if err != nil {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	if user.Role != "Admin" && existingEvent.OrganizerID != user.ID {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"message": "Forbidden: You can only invite to your own events."})
+		return
+	}
+
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Missing file", http.StatusBadRequest)
@@ -295,6 +341,7 @@ func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "Bulk invite processed",
