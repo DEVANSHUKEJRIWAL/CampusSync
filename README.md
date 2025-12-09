@@ -6,7 +6,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?logo=postgresql)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-CampusSync is a full-stack **Campus Event Management System (CEMS)** that centralizes event discovery, registration, and management for universities. It bundles a modern React frontend, a performant Go backend, and PostgreSQL storage—fully Dockerized for easy local development or demo.
+CampusSync is a full-stack **Campus Event Management System (CEMS)** that centralizes event discovery, registration, and management for universities. It bundles a modern React frontend, a performant Go backend, and PostgreSQL storage, fully Dockerized for easy local development or demo.
 
 ---
 
@@ -161,8 +161,8 @@ docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin
 - Try to join again (Success).
 
 ---
-```
-Project Structure
+```Project Structure
+
 CampusSync/
 ├── backend/
 │   ├── cmd/api/main.go       # Application Entrypoint
