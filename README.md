@@ -114,8 +114,7 @@ docker-compose up --build
 This will build the Go Backend, the React Frontend, and spin up the PostgreSQL database.
 
 ### 3. Database Setup (Required Before First Login)  
-This app does not create database tables automatically.  
-You must import the SQL schema after the database container is running.
+This app does not create database tables automatically. You must import the SQL schema after the database container is running.
 
 Run the command from the project root:
 
@@ -124,7 +123,8 @@ cat backend/db/migrations/*.sql | docker exec -i cems_db psql -U postgres -d cem
 ```
 
 This will apply all migration files in backend/db/migrations and create the required tables (e.g., users, events, etc.).  
-Only run this once, unless you reset your Docker volume.
+
+**Only run this once, unless you reset your Docker volume.**
 
 
 ### 4. Access the App
@@ -132,19 +132,18 @@ Open your browser and navigate to:
 http://localhost:5173
 
 ### 5. Admin Setup (First Run)  
-By default, all new users are created with the "Member" role.  
-To unlock Organizer/Admin features, you must manually promote your first user via the database.  
+By default, all new users are created with the "Member" role. To unlock Organizer/Admin features, you must manually promote your first user via the database.  
 
-Log in to the app via the browser.  
-Open a new terminal window.  
-Run the following command to promote yourself to Admin:
+- Log in to the app via the browser.  
+- Open a new terminal window.  
+- Run the following command to promote yourself to Admin:
 
 ```Bash
 docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin' WHERE email='YOUR_EMAIL@gmail.com';"
 ```
-(Replace YOUR_EMAIL@gmail.com with the email you used to log in).
+**(Replace YOUR_EMAIL@gmail.com with the email you used to log in).**
 
-Refresh the browser. You will now see the Admin Console and Create Event options.
+- Refresh the browser. You will now see the Admin Console and Create Event options.
 
 ---
 
