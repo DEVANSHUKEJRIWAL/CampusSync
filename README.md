@@ -106,15 +106,15 @@ This project is fully Dockerized for easy setup.
 git clone <repository-url>
 cd CampusSync
 ```
-2. Start the Application
+2. Start the Application  
 Run the following command in the root directory:
 ```Bash
 docker-compose up --build
 ```
 This will build the Go Backend, the React Frontend, and spin up the PostgreSQL database.
 
-3. Database Setup (Required Before First Login)
-This app does not create database tables automatically.
+3. Database Setup (Required Before First Login)  
+This app does not create database tables automatically.  
 You must import the SQL schema after the database container is running.
 
 Run the command from the project root:
@@ -123,18 +123,20 @@ Run the command from the project root:
 cat backend/db/migrations/*.sql | docker exec -i cems_db psql -U postgres -d cems
 ```
 
-This will apply all migration files in backend/db/migrations and create the required tables (e.g., users, events, etc.).
+This will apply all migration files in backend/db/migrations and create the required tables (e.g., users, events, etc.).  
 Only run this once, unless you reset your Docker volume.
 
 
 4. Access the App
-Open your browser and navigate to:
+Open your browser and navigate to:  
 http://localhost:5173
 
 5. Admin Setup (First Run)
-By default, all new users are created with the "Member" role. To unlock Organizer/Admin features, you must manually promote your first user via the database.
-Log in to the app via the browser.
-Open a new terminal window.
+By default, all new users are created with the "Member" role.  
+To unlock Organizer/Admin features, you must manually promote your first user via the database.  
+
+Log in to the app via the browser.  
+Open a new terminal window.  
 Run the following command to promote yourself to Admin:
 
 ```Bash
@@ -143,6 +145,7 @@ docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin
 (Replace YOUR_EMAIL@gmail.com with the email you used to log in).
 
 Refresh the browser. You will now see the Admin Console and Create Event options.
+
 ---
 
 ## Testing Specific Features
@@ -157,6 +160,8 @@ Refresh the browser. You will now see the Admin Console and Create Event options
 - Try to join as a normal user (Access Denied).
 - As the organizer, use the Invite or Bulk CSV button to invite the user's email.
 - Try to join again (Success).
+
+---
 ```
 Project Structure
 CampusSync/
