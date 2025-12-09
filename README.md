@@ -161,8 +161,8 @@ docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin
 - Try to join again (Success).
 
 ---
-```Project Structure
-
+```
+Project Structure
 CampusSync/
 ├── backend/
 │   ├── cmd/api/main.go       # Application Entrypoint
