@@ -100,20 +100,20 @@ auth0Audience := "http://localhost:8080"
 ## Setup Instructions
 This project is fully Dockerized for easy setup.
 
-1. Clone the Repository
+### 1. Clone the Repository
 
 ```Bash
 git clone <repository-url>
 cd CampusSync
 ```
-2. Start the Application  
+### 2. Start the Application  
 Run the following command in the root directory:
 ```Bash
 docker-compose up --build
 ```
 This will build the Go Backend, the React Frontend, and spin up the PostgreSQL database.
 
-3. Database Setup (Required Before First Login)  
+### 3. Database Setup (Required Before First Login)  
 This app does not create database tables automatically.  
 You must import the SQL schema after the database container is running.
 
@@ -127,11 +127,11 @@ This will apply all migration files in backend/db/migrations and create the requ
 Only run this once, unless you reset your Docker volume.
 
 
-4. Access the App
+### 4. Access the App
 Open your browser and navigate to:  
 http://localhost:5173
 
-5. Admin Setup (First Run)
+### 5. Admin Setup (First Run)  
 By default, all new users are created with the "Member" role.  
 To unlock Organizer/Admin features, you must manually promote your first user via the database.  
 
