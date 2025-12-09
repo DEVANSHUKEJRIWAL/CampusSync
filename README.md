@@ -95,6 +95,7 @@ const audience = "http://localhost:8080";
 auth0Domain := "YOUR_AUTH0_DOMAIN"
 auth0Audience := "http://localhost:8080"
 ```
+---
 
 ## Setup Instructions
 This project is fully Dockerized for easy setup.
@@ -106,7 +107,6 @@ git clone <repository-url>
 cd CampusSync
 ```
 2. Start the Application
-
 Run the following command in the root directory:
 ```Bash
 docker-compose up --build
@@ -114,7 +114,6 @@ docker-compose up --build
 This will build the Go Backend, the React Frontend, and spin up the PostgreSQL database.
 
 3. Database Setup (Required Before First Login)
-
 This app does not create database tables automatically.
 You must import the SQL schema after the database container is running.
 
@@ -129,18 +128,13 @@ Only run this once, unless you reset your Docker volume.
 
 
 4. Access the App
-
 Open your browser and navigate to:
-
 http://localhost:5173
 
 5. Admin Setup (First Run)
 By default, all new users are created with the "Member" role. To unlock Organizer/Admin features, you must manually promote your first user via the database.
-
 Log in to the app via the browser.
-
 Open a new terminal window.
-
 Run the following command to promote yourself to Admin:
 
 ```Bash
@@ -149,6 +143,7 @@ docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin
 (Replace YOUR_EMAIL@gmail.com with the email you used to log in).
 
 Refresh the browser. You will now see the Admin Console and Create Event options.
+---
 
 ## Testing Specific Features
 - Testing the Waitlist.
