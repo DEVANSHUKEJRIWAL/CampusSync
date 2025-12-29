@@ -180,3 +180,29 @@ func (h *Handler) HandleToggleActive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "User status updated successfully"})
 }
+
+func (h *Handler) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) {
+	users, err := h.Repo.GetLeaderboard(r.Context())
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
+}
+
+func (h *Handler) HandleGetMyBadges(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.Repo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	badges, err := h.Repo.GetUserBadges(r.Context(), user.ID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(badges)
+}

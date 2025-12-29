@@ -57,7 +57,7 @@ func main() {
 	}
 	auth0Domain := os.Getenv("AUTH0_DOMAIN")
 	if auth0Domain == "" {
-		log.Fatal("AUTH0_DOMAIN environment variable is required")
+		auth0Domain = "dev-cems-terps.us.auth0.com"
 	}
 
 	auth0Audience := os.Getenv("AUTH0_AUDIENCE")
@@ -98,6 +98,26 @@ func main() {
 	noteHandler := &notifications.Handler{Repo: eventRepo, UserRepo: userRepo}
 	apiMux.HandleFunc("GET /notifications", noteHandler.HandleListNotifications)
 	apiMux.HandleFunc("POST /notifications/read", noteHandler.HandleMarkRead)
+	apiMux.HandleFunc("POST /events/checkin", eventHandler.HandleCheckIn)
+	apiMux.HandleFunc("GET /events/certificate", eventHandler.HandleDownloadCertificate)
+	apiMux.HandleFunc("GET /leaderboard", userHandler.HandleGetLeaderboard)
+	apiMux.HandleFunc("GET /users/badges", userHandler.HandleGetMyBadges)
+	apiMux.Handle("GET /analytics", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stats, err := eventRepo.GetAnalytics(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(stats)
+	})))
+
+	apiMux.Handle("GET /analytics/export", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=campus_sync_full_export.csv")
+		if err := eventRepo.ExportAllData(r.Context(), w); err != nil {
+			http.Error(w, "Export failed", http.StatusInternalServerError)
+		}
+	})))
 
 	mux.Handle("/api/", http.StripPrefix("/api", authMiddleware(apiMux)))
 

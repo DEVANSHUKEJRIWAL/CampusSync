@@ -65,12 +65,42 @@ export default function EventDashboard() {
     const [formError, setFormError] = useState("");
     const [formSuccess, setFormSuccess] = useState("");
     const [showScanner, setShowScanner] = useState(false);
+    const [leaderboard, setLeaderboard] = useState<any[]>([]);
+    const [myBadges, setMyBadges] = useState<any[]>([]);
 
     const [formData, setFormData] = useState({
         title: "", description: "", location: "",
         start_time: "", end_time: "",
         capacity: 0, visibility: "PUBLIC", category: "General"
     });
+
+    const fetchLeaderboard = async () => {
+        try {
+            const token = await getAccessTokenSilently();
+
+            const res = await fetch(`${API_URL}/api/leaderboard`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                setLeaderboard(data || []);
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    const fetchBadges = async () => {
+        try {
+            const token = await getAccessTokenSilently();
+            const res = await fetch(`${API_URL}/api/users/badges`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setMyBadges(data || []);
+            }
+        } catch (e) { console.error(e); }
+    };
 
     const canManage = userRole === 'Admin' || userRole === 'Organizer';
 
@@ -184,6 +214,8 @@ export default function EventDashboard() {
             fetchMyEvents();
             fetchUserProfile();
             fetchNotifications();
+            fetchBadges();
+            fetchLeaderboard();
         }
     }, [user, isAuthenticated]);
 
@@ -210,6 +242,42 @@ export default function EventDashboard() {
         } catch (error: any) {
             showToast(`Error: ${error.message}`, "error");
         }
+    };
+
+    const addToCalendar = (evt: any) => {
+        if (!evt.start_time) return;
+
+        const startDate = new Date(evt.start_time);
+        // Default to 1 hour if no end time
+        const endDate = evt.end_time
+            ? new Date(evt.end_time)
+            : new Date(startDate.getTime() + 60 * 60 * 1000);
+
+        const format = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+        const start = format(startDate);
+        const end = format(endDate);
+
+        const url = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(evt.title)}&dates=${start}/${end}&details=${encodeURIComponent(evt.description || "")}&location=${encodeURIComponent(evt.location || "")}`;
+        window.open(url, "_blank");
+    };
+
+    const downloadCertificate = async (eventId: number, eventTitle: string) => {
+        try {
+            const token = await getAccessTokenSilently();
+            const res = await fetch(`${API_URL}/api/events/certificate?event_id=${eventId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (!res.ok) throw new Error("Certificate not available (Did you attend?)");
+
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Certificate - ${eventTitle}.pdf`;
+            a.click();
+            showToast("🎓 Certificate Downloaded!", "success");
+        } catch (e) { showToast("Failed to download certificate", "error"); }
     };
 
     const handleCancelClick = (id: number) => {
@@ -593,28 +661,107 @@ export default function EventDashboard() {
                 ) : (
                     <div className="schedule-grid">
                         {myEvents.map((e) => (
-                            <div key={e.event_id}
-                                 className={`schedule-item ${e.my_status === 'REGISTERED' ? 'registered' : 'waitlisted'}`}>
+                            <div key={e.event_id} className={`schedule-item ${e.my_status === 'WAITLISTED' ? 'waitlisted' : 'registered'}`}>
+
+                                {/* Event Info */}
                                 <div>
                                     <strong style={{fontSize: '1.05rem', display: 'block'}}>{e.title}</strong>
-                                    <div style={{
-                                        fontSize: '0.85rem',
-                                        color: '#64748b',
-                                        marginTop: '4px'
-                                    }}>📅 {new Date(e.start_time).toLocaleString()}</div>
+                                    <div style={{fontSize: '0.85rem', color: '#64748b', marginTop: '4px', display:'flex', alignItems:'center', gap:'6px'}}>
+                                        <CalendarIcon style={{width:'14px'}}/> {new Date(e.start_time).toLocaleString()}
+                                    </div>
                                 </div>
-                                <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-                                    <span
-                                        className={`badge ${e.my_status === "REGISTERED" ? "badge-public" : "badge-status"}`}>{e.my_status}</span>
-                                    {e.my_status === "REGISTERED" &&
-                                        <button onClick={() => openFeedbackModal(e.event_id)}
-                                                className="btn btn-sm btn-warning">Rate</button>}
+
+                                {/* Actions */}
+                                <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+
+                                    {/* Status Badge */}
+                                    <span className={`badge ${e.my_status === "WAITLISTED" ? "badge-status" : "badge-public"}`}>
+                {e.my_status}
+            </span>
+
+                                    {/* Add to Calendar Button */}
+                                    <button
+                                        onClick={() => addToCalendar(e)}
+                                        className="btn btn-sm btn-secondary"
+                                        title="Add to Google Calendar"
+                                        style={{padding:'6px'}}
+                                    >
+                                        <CalendarDaysIcon style={{width:'16px'}} />
+                                    </button>
+
+                                    {/* 👇 UPDATED: Rate Button (Visible for Registered OR Attended) */}
+                                    {(e.my_status === "REGISTERED" || e.my_status === "ATTENDED") && (
+                                        <button
+                                            onClick={() => openFeedbackModal(e.event_id)}
+                                            className="btn btn-sm btn-warning"
+                                            style={{display:'flex', alignItems:'center', gap:'4px'}}
+                                        >
+                                            Rate
+                                        </button>
+                                    )}
+
+                                    {/* Certificate Button (Only if Attended) */}
+                                    {e.my_status === "ATTENDED" && (
+                                        <button
+                                            onClick={() => downloadCertificate(e.event_id, e.title)}
+                                            className="btn btn-sm btn-success"
+                                            style={{display:'flex', alignItems:'center', gap:'4px'}}
+                                        >
+                                            🎓 Cert
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
             </div>
+
+            <div className="grid-2" style={{marginBottom: '40px'}}>
+
+                {/* Leaderboard */}
+                <div className="form-card" style={{padding: '20px'}}>
+                    <h3 style={{display:'flex', alignItems:'center', gap:'10px'}}>🏆 Campus Leaderboard</h3>
+                    <table style={{width:'100%', marginTop:'15px'}}>
+                        <thead>
+                        <tr style={{textAlign:'left', color:'#64748b', fontSize:'14px'}}>
+                            <th>Rank</th>
+                            <th>User</th>
+                            <th>Points</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {leaderboard.map((u, idx) => (
+                            <tr key={u.id} style={{borderBottom: '1px solid #f1f5f9'}}>
+                                <td style={{padding:'10px', fontWeight:'bold'}}>
+                                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                                </td>
+                                <td style={{padding:'10px'}}>{u.email.split('@')[0]}</td>
+                                <td style={{padding:'10px', color:'#4f46e5', fontWeight:'bold'}}>{u.points} pts</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* My Badges */}
+                <div className="form-card" style={{padding: '20px'}}>
+                    <h3 style={{display:'flex', alignItems:'center', gap:'10px'}}>🎖️ My Badges</h3>
+                    {myBadges.length === 0 ? (
+                        <p style={{color:'#94a3b8', textAlign:'center', marginTop:'20px'}}>Attend events to earn badges!</p>
+                    ) : (
+                        <div style={{display:'flex', gap:'15px', flexWrap:'wrap', marginTop:'15px'}}>
+                            {myBadges.map((b:any) => (
+                                <div key={b.name} style={{textAlign:'center', background:'#f8fafc', padding:'10px', borderRadius:'8px', border:'1px solid #e2e8f0', width:'80px'}}>
+                                    <div style={{fontSize:'2rem'}}>{b.icon}</div>
+                                    <div style={{fontSize:'0.75rem', fontWeight:'bold', marginTop:'5px'}}>{b.name}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
 
             <div className="toolbar">
                 <div className="search-inputs">

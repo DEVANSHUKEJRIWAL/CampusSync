@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/jung-kurt/gofpdf v1.16.2 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect

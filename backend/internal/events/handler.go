@@ -13,6 +13,7 @@ import (
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/store"
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
 	"github.com/auth0/go-jwt-middleware/v2/validator"
+	"github.com/jung-kurt/gofpdf"
 )
 
 type Handler struct {
@@ -408,4 +409,76 @@ func (h *Handler) HandleGetAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func (h *Handler) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	adminUser, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil || (adminUser.Role != "Admin" && adminUser.Role != "Organizer") {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		EventID int64 `json:"event_id"`
+		UserID  int64 `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Repo.MarkAttended(r.Context(), req.EventID, req.UserID); err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "User checked in successfully"})
+}
+
+func (h *Handler) HandleDownloadCertificate(w http.ResponseWriter, r *http.Request) {
+	// 1. Get User
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	eventIDStr := r.URL.Query().Get("event_id")
+	eventID, _ := strconv.ParseInt(eventIDStr, 10, 64)
+
+	status, err := h.Repo.GetRegistrationStatus(r.Context(), eventID, user.ID)
+	if err != nil || status != "ATTENDED" {
+		http.Error(w, "You must attend the event to get a certificate.", http.StatusForbidden)
+		return
+	}
+
+	event, _ := h.Repo.GetEventByID(r.Context(), eventID)
+
+	pdf := gofpdf.New("L", "mm", "A4", "")
+	pdf.AddPage()
+	pdf.SetFont("Arial", "B", 40)
+	pdf.CellFormat(0, 30, "Certificate of Participation", "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "", 20)
+	pdf.Ln(20)
+	pdf.CellFormat(0, 10, "This certifies that", "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "B", 30)
+	pdf.Ln(10)
+	pdf.CellFormat(0, 10, user.Email, "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "", 20)
+	pdf.Ln(20)
+	pdf.CellFormat(0, 10, "Has successfully attended", "", 1, "C", false, 0, "")
+
+	pdf.SetFont("Arial", "I", 25)
+	pdf.Ln(10)
+	pdf.CellFormat(0, 10, event.Title, "", 1, "C", false, 0, "")
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=certificate.pdf")
+	pdf.Output(w)
 }

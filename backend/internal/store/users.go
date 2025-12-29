@@ -7,13 +7,23 @@ import (
 )
 
 type User struct {
-	ID        int64     `json:"id"`
-	Email     string    `json:"email"`
-	OIDCID    string    `json:"oidc_id"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	IsActive  bool      `json:"is_active"`
+	ID             int64      `json:"id"`
+	Email          string     `json:"email"`
+	OIDCID         string     `json:"oidc_id"`
+	Role           string     `json:"role"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	IsActive       bool       `json:"is_active"`
+	Points         int        `json:"points"`
+	CurrentStreak  int        `json:"current_streak"`
+	LastAttendedAt *time.Time `json:"last_attended_at"`
+}
+
+type Badge struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Icon        string    `json:"icon"`
+	EarnedAt    time.Time `json:"earned_at"`
 }
 
 type UserRepository struct {
@@ -104,4 +114,75 @@ func (r *UserRepository) ToggleActive(ctx context.Context, userID int64, isActiv
 	query := "UPDATE users SET is_active=$1, updated_at=NOW() WHERE id=$2"
 	_, err := r.db.ExecContext(ctx, query, isActive, userID)
 	return err
+}
+
+func (r *UserRepository) GetLeaderboard(ctx context.Context) ([]*User, error) {
+	query := `SELECT id, email, role, points, current_streak FROM users WHERE is_active = true ORDER BY points DESC LIMIT 10`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Email, &u.Role, &u.Points, &u.CurrentStreak); err != nil {
+			return nil, err
+		}
+		users = append(users, &u)
+	}
+	return users, nil
+}
+
+// GetUserBadges returns badges for a specific user
+func (r *UserRepository) GetUserBadges(ctx context.Context, userID int64) ([]*Badge, error) {
+	query := `
+        SELECT b.name, b.description, b.icon, ub.earned_at
+        FROM user_badges ub
+        JOIN badges b ON ub.badge_id = b.id
+        WHERE ub.user_id = $1
+        ORDER BY ub.earned_at DESC
+    `
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var badges []*Badge
+	for rows.Next() {
+		var b Badge
+		if err := rows.Scan(&b.Name, &b.Description, &b.Icon, &b.EarnedAt); err != nil {
+			return nil, err
+		}
+		badges = append(badges, &b)
+	}
+	return badges, nil
+}
+
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*User, error) {
+	query := `
+        SELECT id, email, oidc_id, role, created_at, updated_at, is_active, 
+               COALESCE(points, 0), COALESCE(current_streak, 0) 
+        FROM users 
+        WHERE email = $1`
+
+	var u User
+	err := r.db.QueryRowContext(ctx, query, email).Scan(
+		&u.ID,
+		&u.Email,
+		&u.OIDCID,
+		&u.Role,
+		&u.CreatedAt,
+		&u.UpdatedAt,
+		&u.IsActive,
+		&u.Points,
+		&u.CurrentStreak,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }

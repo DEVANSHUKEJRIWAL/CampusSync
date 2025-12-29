@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useToast } from "../context/ToastContext";
 import "./EventDashboard.css";
+import AdminAnalytics from "./AdminAnalytics";
 
 interface User {
     id: number;
@@ -9,14 +10,6 @@ interface User {
     role: string;
     created_at: string;
     is_active: boolean;
-}
-
-interface SystemStats {
-    total_users: number;
-    active_users: number;
-    total_events: number;
-    total_registrations: number;
-    avg_rating: number;
 }
 
 interface EventAnalytics {
@@ -32,7 +25,7 @@ export default function AdminPanel() {
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState("ANALYTICS");
     const [users, setUsers] = useState<User[]>([]);
-    const [stats, setStats] = useState<SystemStats | null>(null);
+    // Removed unused stats state
     const [events, setEvents] = useState<EventAnalytics[]>([]);
     const [currentUserRole, setCurrentUserRole] = useState("");
     const [confirmModal, setConfirmModal] = useState<{id: number, active: boolean} | null>(null);
@@ -42,7 +35,6 @@ export default function AdminPanel() {
 
     useEffect(() => {
         fetchUsers();
-        fetchStats();
         fetchEvents();
     }, []);
 
@@ -60,16 +52,6 @@ export default function AdminPanel() {
                     if (me) setCurrentUserRole(me.role);
                 }
             }
-        } catch (e) { console.error(e); }
-    };
-
-    const fetchStats = async () => {
-        try {
-            const token = await getAccessTokenSilently();
-            const res = await fetch(`${API_URL}/api/admin/analytics`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            if(res.ok) setStats(await res.json());
         } catch (e) { console.error(e); }
     };
 
@@ -153,14 +135,8 @@ export default function AdminPanel() {
                 </div>
             </div>
 
-            {activeTab === 'ANALYTICS' && stats && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-                    <StatCard title="Total Users" value={stats.total_users} color="#3b82f6" icon="👥" />
-                    <StatCard title="Active Users" value={stats.active_users} color="#10b981" icon="✅" />
-                    <StatCard title="Total Events" value={stats.total_events} color="#8b5cf6" icon="📅" />
-                    <StatCard title="Registrations" value={stats.total_registrations} color="#f59e0b" icon="🎟️" />
-                    <StatCard title="Avg Rating" value={stats.avg_rating ? stats.avg_rating.toFixed(1) : "N/A"} color="#ec4899" icon="⭐" />
-                </div>
+            {activeTab === 'ANALYTICS' && (
+                <AdminAnalytics />
             )}
 
             {activeTab === 'USERS' && (
@@ -275,16 +251,4 @@ export default function AdminPanel() {
             )}
         </div>
     );
-}
-
-function StatCard({ title, value, color, icon }: any) {
-    return (
-        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
-                <span style={{ fontSize: '14px', color: '#6b7280', fontWeight: '600', textTransform: 'uppercase' }}>{title}</span>
-                <span style={{ fontSize: '24px' }}>{icon}</span>
-            </div>
-            <div style={{ fontSize: '32px', fontWeight: '800', color: color }}>{value}</div>
-        </div>
-    )
 }

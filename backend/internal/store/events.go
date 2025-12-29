@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -34,15 +36,25 @@ type Feedback struct {
 }
 
 type SystemStats struct {
-	TotalUsers         int     `json:"total_users"`
-	ActiveUsers        int     `json:"active_users"`
-	TotalEvents        int     `json:"total_events"`
-	TotalRegistrations int     `json:"total_registrations"`
-	AvgRating          float64 `json:"avg_rating"`
+	TotalUsers         int            `json:"total_users"`
+	ActiveUsers        int            `json:"active_users"`
+	TotalEvents        int            `json:"total_events"`
+	TotalRegistrations int            `json:"total_registrations"`
+	AvgRating          float64        `json:"avg_rating"`
+	TotalAttended      int            `json:"total_attended"`
+	AttendanceRate     float64        `json:"attendance_rate"`
+	WeeklyHeatmap      map[string]int `json:"weekly_heatmap"`
 }
 
 type EventRepository struct {
 	db *sql.DB
+}
+
+type AnalyticsSummary struct {
+	TotalRegistrations int            `json:"total_registrations"`
+	TotalAttended      int            `json:"total_attended"`
+	AttendanceRate     float64        `json:"attendance_rate"`
+	WeeklyHeatmap      map[string]int `json:"weekly_heatmap"` // e.g., "Monday": 5
 }
 
 func NewEventRepository(db *sql.DB) *EventRepository {
@@ -157,7 +169,10 @@ func (r *EventRepository) AddFeedback(ctx context.Context, f *Feedback) error {
 }
 
 func (r *EventRepository) GetSystemStats(ctx context.Context) (*SystemStats, error) {
-	stats := &SystemStats{}
+	stats := &SystemStats{
+		WeeklyHeatmap: make(map[string]int),
+	}
+
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&stats.TotalUsers); err != nil {
 		return nil, err
 	}
@@ -167,9 +182,23 @@ func (r *EventRepository) GetSystemStats(ctx context.Context) (*SystemStats, err
 	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events").Scan(&stats.TotalEvents); err != nil {
 		return nil, err
 	}
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM registrations WHERE status = 'REGISTERED'").Scan(&stats.TotalRegistrations); err != nil {
+
+	// 2. Registration & Attendance Logic
+	queryReg := `
+		SELECT 
+			COUNT(*) as total,
+			COUNT(CASE WHEN status = 'ATTENDED' THEN 1 END) as attended
+		FROM registrations
+	`
+	if err := r.db.QueryRowContext(ctx, queryReg).Scan(&stats.TotalRegistrations, &stats.TotalAttended); err != nil {
 		return nil, err
 	}
+
+	if stats.TotalRegistrations > 0 {
+		stats.AttendanceRate = (float64(stats.TotalAttended) / float64(stats.TotalRegistrations)) * 100
+	}
+
+	// 3. Average Rating
 	var avg sql.NullFloat64
 	if err := r.db.QueryRowContext(ctx, "SELECT AVG(rating) FROM event_feedback").Scan(&avg); err != nil {
 		return nil, err
@@ -179,6 +208,30 @@ func (r *EventRepository) GetSystemStats(ctx context.Context) (*SystemStats, err
 	} else {
 		stats.AvgRating = 0.0
 	}
+
+	// 4. Weekly Heatmap (The missing piece!)
+	queryHeatmap := `
+		SELECT TRIM(TO_CHAR(e.start_time, 'Day')), COUNT(r.id)
+		FROM events e
+		JOIN registrations r ON e.id = r.event_id
+		WHERE r.status = 'ATTENDED'
+		GROUP BY 1
+	`
+	rows, err := r.db.QueryContext(ctx, queryHeatmap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var day string
+		var count int
+		if err := rows.Scan(&day, &count); err != nil {
+			return nil, err
+		}
+		stats.WeeklyHeatmap[day] = count
+	}
+
 	return stats, nil
 }
 
@@ -194,6 +247,7 @@ type UserEvent struct {
 	Title     string    `json:"title"`
 	Location  string    `json:"location"`
 	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
 	MyStatus  string    `json:"my_status"`
 }
 
@@ -279,32 +333,159 @@ func (r *EventRepository) BulkInvite(ctx context.Context, eventID int64, emails 
 
 func (r *EventRepository) GetUserEvents(ctx context.Context, userID int64) ([]*UserEvent, error) {
 	query := `
-		SELECT e.id, e.title, e.location, e.start_time, 'REGISTERED' as status
+		SELECT e.id, e.title, e.location, e.start_time, e.end_time, CAST(r.status AS TEXT)
 		FROM events e
 		JOIN registrations r ON e.id = r.event_id
 		WHERE r.user_id = $1
 		
 		UNION ALL
 		
-		SELECT e.id, e.title, e.location, e.start_time, 'WAITLISTED' as status
+		SELECT e.id, e.title, e.location, e.start_time, e.end_time, 'WAITLISTED' as status
 		FROM events e
 		JOIN waitlist w ON e.id = w.event_id
 		WHERE w.user_id = $1
 		
 		ORDER BY start_time ASC
 	`
+
 	rows, err := r.db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var events []*UserEvent
 	for rows.Next() {
 		var e UserEvent
-		if err := rows.Scan(&e.EventID, &e.Title, &e.Location, &e.StartTime, &e.MyStatus); err != nil {
+		if err := rows.Scan(&e.EventID, &e.Title, &e.Location, &e.StartTime, &e.EndTime, &e.MyStatus); err != nil {
 			return nil, err
 		}
 		events = append(events, &e)
 	}
 	return events, nil
+}
+
+func (r *EventRepository) MarkAttended(ctx context.Context, eventID, userID int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, "UPDATE registrations SET status='ATTENDED' WHERE event_id=$1 AND user_id=$2 AND status='REGISTERED'", eventID, userID)
+	if err != nil {
+		return err
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return nil
+	}
+
+	_, err = tx.ExecContext(ctx, "UPDATE users SET points = points + 10, last_attended_at = NOW() WHERE id = $1", userID)
+	if err != nil {
+		return err
+	}
+
+	queryBadges := `
+        INSERT INTO user_badges (user_id, badge_id)
+        SELECT $1, id FROM badges 
+        WHERE required_points <= (SELECT points FROM users WHERE id = $1)
+        ON CONFLICT DO NOTHING
+    `
+	_, err = tx.ExecContext(ctx, queryBadges, userID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *EventRepository) GetRegistrationStatus(ctx context.Context, eventID, userID int64) (string, error) {
+	var status string
+	err := r.db.QueryRowContext(ctx, "SELECT status FROM registrations WHERE event_id=$1 AND user_id=$2", eventID, userID).Scan(&status)
+	return status, err
+}
+
+func (r *EventRepository) GetAnalytics(ctx context.Context) (*AnalyticsSummary, error) {
+	summary := &AnalyticsSummary{WeeklyHeatmap: make(map[string]int)}
+
+	// 1. Get Drop-off Stats
+	queryStats := `
+        SELECT 
+            COUNT(*) as total,
+            COUNT(CASE WHEN status = 'ATTENDED' THEN 1 END) as attended
+        FROM registrations
+    `
+	err := r.db.QueryRowContext(ctx, queryStats).Scan(&summary.TotalRegistrations, &summary.TotalAttended)
+	if err != nil {
+		return nil, err
+	}
+
+	if summary.TotalRegistrations > 0 {
+		summary.AttendanceRate = (float64(summary.TotalAttended) / float64(summary.TotalRegistrations)) * 100
+	}
+
+	queryHeatmap := `
+        SELECT TRIM(TO_CHAR(e.start_time, 'Day')), COUNT(r.id)
+        FROM events e
+        JOIN registrations r ON e.id = r.event_id
+        WHERE r.status = 'ATTENDED'
+        GROUP BY 1
+    `
+	rows, err := r.db.QueryContext(ctx, queryHeatmap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var day string
+		var count int
+		if err := rows.Scan(&day, &count); err != nil {
+			return nil, err
+		}
+		summary.WeeklyHeatmap[day] = count
+	}
+
+	return summary, nil
+}
+
+// ExportAllData generates a CSV of ALL registrations in the system
+func (r *EventRepository) ExportAllData(ctx context.Context, w io.Writer) error {
+	query := `
+        SELECT e.title, e.start_time, u.email, u.role, r.status, r.created_at
+        FROM registrations r
+        JOIN events e ON r.event_id = e.id
+        JOIN users u ON r.user_id = u.id
+        ORDER BY e.start_time DESC
+    `
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	// Header
+	writer.Write([]string{"Event Title", "Event Date", "User Email", "User Role", "Status", "Registered At"})
+
+	for rows.Next() {
+		var title, email, role, status string
+		var evtDate, regDate time.Time
+		if err := rows.Scan(&title, &evtDate, &email, &role, &status, &regDate); err != nil {
+			return err
+		}
+		writer.Write([]string{
+			title,
+			evtDate.Format("2006-01-02 15:04"),
+			email,
+			role,
+			status,
+			regDate.Format("2006-01-02 15:04"),
+		})
+	}
+	return nil
 }
