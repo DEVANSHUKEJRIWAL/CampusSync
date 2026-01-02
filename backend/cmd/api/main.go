@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/ai"
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/auth"
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/background"
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/events"
@@ -34,10 +35,11 @@ func main() {
 	updater.Start()
 	log.Println("⏰ Background Status Updater started")
 
+	// 2. Setup Repos & Services
 	userRepo := store.NewUserRepository(db)
 	eventRepo := store.NewEventRepository(db)
-
 	notifyService := notifications.NewService()
+	aiService := ai.NewService()
 
 	regService := &registration.Service{
 		DB:            db,
@@ -48,6 +50,7 @@ func main() {
 		Repo:          eventRepo,
 		UserRepo:      userRepo,
 		Notifications: notifyService,
+		AI:            aiService,
 	}
 	userHandler := &users.Handler{Repo: userRepo}
 	regHandler := &registration.Handler{
@@ -55,31 +58,48 @@ func main() {
 		UserRepo:  userRepo,
 		EventRepo: eventRepo,
 	}
+
+	// 3. Auth Setup
 	auth0Domain := os.Getenv("AUTH0_DOMAIN")
 	if auth0Domain == "" {
 		auth0Domain = "dev-cems-terps.us.auth0.com"
 	}
-
 	auth0Audience := os.Getenv("AUTH0_AUDIENCE")
 	if auth0Audience == "" {
 		auth0Audience = "http://localhost:8080"
 	}
-
 	authMiddleware := auth.EnsureValidToken(auth0Domain, auth0Audience)
 	rateLimiter := middleware.NewRateLimiter(2 * time.Second)
 
+	// 4. Router Setup
 	mux := http.NewServeMux()
 
+	// --- Public Routes ---
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "db": "connected"})
 	})
-	mux.HandleFunc("GET /api/events", eventHandler.HandleListEvents)
 
+	// Note: GET /api/events is public in your design
+	mux.HandleFunc("GET /api/events", eventHandler.HandleListEvents)
+	mux.HandleFunc("/api/events/checkin/self", eventHandler.HandleSelfCheckIn)
+	mux.HandleFunc("POST /api/ai/chat", eventHandler.HandleChat)
+	mux.HandleFunc("GET /api/events/comments", eventHandler.HandleGetComments)
+	mux.HandleFunc("GET /api/events/photos", eventHandler.HandleGetPhotos)
+
+	// --- Protected Routes (Mounted at /api/) ---
 	apiMux := http.NewServeMux()
 
+	// Users
 	apiMux.HandleFunc("POST /users/sync", userHandler.HandleSyncUser)
+	apiMux.HandleFunc("GET /admin/users", userHandler.HandleListUsers)
+	apiMux.HandleFunc("PATCH /admin/users/role", userHandler.HandleUpdateRole)
+	apiMux.HandleFunc("PATCH /admin/users/active", userHandler.HandleToggleActive)
+	apiMux.HandleFunc("GET /leaderboard", userHandler.HandleGetLeaderboard)
+	apiMux.HandleFunc("GET /users/badges", userHandler.HandleGetMyBadges)
+
+	// Events (Management)
 	apiMux.HandleFunc("POST /events", eventHandler.HandleCreateEvent)
 	apiMux.HandleFunc("PUT /events", eventHandler.HandleUpdateEvent)
 	apiMux.HandleFunc("POST /events/invite", eventHandler.HandleInviteUser)
@@ -87,37 +107,43 @@ func main() {
 	apiMux.HandleFunc("GET /events/attendees", eventHandler.HandleListAttendees)
 	apiMux.HandleFunc("GET /events/export", eventHandler.HandleExportAttendees)
 	apiMux.HandleFunc("POST /events/feedback", eventHandler.HandleAddFeedback)
+	apiMux.HandleFunc("GET /admin/analytics", eventHandler.HandleGetAnalytics)
+	apiMux.HandleFunc("GET /events/certificate", eventHandler.HandleDownloadCertificate)
+	apiMux.HandleFunc("POST /events/comments", eventHandler.HandleAddComment)
+	apiMux.HandleFunc("POST /events/photos", eventHandler.HandleAddPhoto)
+
+	// Check-In Logic
+	// Organizer/Admin Scan QR:
+	apiMux.HandleFunc("POST /events/checkin", eventHandler.HandleCheckIn)
+	// Self-CheckIn (Kiosk Mode):
+
+	// Registrations
 	apiMux.Handle("POST /registrations", rateLimiter.LimitMiddleware(http.HandlerFunc(regHandler.HandleRegister)))
 	apiMux.HandleFunc("DELETE /registrations", regHandler.HandleCancel)
 	apiMux.HandleFunc("GET /registrations/me", regHandler.HandleListMyRegistrations)
-	apiMux.HandleFunc("GET /admin/users", userHandler.HandleListUsers)
-	apiMux.HandleFunc("PATCH /admin/users/role", userHandler.HandleUpdateRole)
-	apiMux.HandleFunc("PATCH /admin/users/active", userHandler.HandleToggleActive)
-	apiMux.HandleFunc("GET /admin/analytics", eventHandler.HandleGetAnalytics)
 
+	// Notifications
 	noteHandler := &notifications.Handler{Repo: eventRepo, UserRepo: userRepo}
 	apiMux.HandleFunc("GET /notifications", noteHandler.HandleListNotifications)
 	apiMux.HandleFunc("POST /notifications/read", noteHandler.HandleMarkRead)
-	apiMux.HandleFunc("POST /events/checkin", eventHandler.HandleCheckIn)
-	apiMux.HandleFunc("GET /events/certificate", eventHandler.HandleDownloadCertificate)
-	apiMux.HandleFunc("GET /leaderboard", userHandler.HandleGetLeaderboard)
-	apiMux.HandleFunc("GET /users/badges", userHandler.HandleGetMyBadges)
-	apiMux.Handle("GET /analytics", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	// Analytics (Advanced)
+	apiMux.Handle("GET /analytics", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stats, err := eventRepo.GetAnalytics(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		json.NewEncoder(w).Encode(stats)
-	})))
+	}))
 
-	apiMux.Handle("GET /analytics/export", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	apiMux.Handle("GET /analytics/export", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", "attachment; filename=campus_sync_full_export.csv")
 		if err := eventRepo.ExportAllData(r.Context(), w); err != nil {
 			http.Error(w, "Export failed", http.StatusInternalServerError)
 		}
-	})))
+	}))
 
 	mux.Handle("/api/", http.StripPrefix("/api", authMiddleware(apiMux)))
 

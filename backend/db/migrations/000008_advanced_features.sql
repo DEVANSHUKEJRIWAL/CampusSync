@@ -1,0 +1,5 @@
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS custom_fields_schema TEXT DEFAULT '[]';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_types_schema TEXT DEFAULT '[]';
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS form_responses TEXT DEFAULT '{}';
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS ticket_name VARCHAR(100) DEFAULT 'Standard';

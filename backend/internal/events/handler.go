@@ -4,11 +4,13 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/ai"
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/notifications"
 	"github.com/DEVANSHUKEJRIWAL/CampusSync/internal/store"
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
@@ -20,6 +22,7 @@ type Handler struct {
 	Repo          *store.EventRepository
 	UserRepo      *store.UserRepository
 	Notifications *notifications.Service
+	AI            *ai.Service
 }
 
 // CreateEventRequest defines what the frontend sends
@@ -32,6 +35,9 @@ type CreateEventRequest struct {
 	Capacity    int       `json:"capacity"`
 	Visibility  string    `json:"visibility"`
 	Category    string    `json:"category"`
+}
+type SelfCheckInRequest struct {
+	Email string `json:"email"`
 }
 
 // Validate Logic
@@ -351,6 +357,7 @@ func (h *Handler) HandleBulkInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
+	// 1. Get User from Context
 	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
 	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
 	if err != nil {
@@ -358,28 +365,41 @@ func (h *Handler) HandleAddFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2. Define the Request Structure (This defines 'req')
 	var req struct {
 		EventID int64  `json:"event_id"`
 		Rating  int    `json:"rating"`
 		Comment string `json:"comment"`
 	}
+
+	// 3. Decode JSON into 'req'
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid body", http.StatusBadRequest)
 		return
 	}
 
+	// 4. Validate
 	if req.Rating < 1 || req.Rating > 5 {
 		http.Error(w, "Rating must be between 1 and 5", http.StatusBadRequest)
 		return
 	}
 
-	feedback := &store.Feedback{
-		EventID: req.EventID,
-		UserID:  user.ID,
-		Rating:  req.Rating,
-		Comment: req.Comment,
+	// 5. Analyze Sentiment (Now 'req' is definitely defined)
+	sentiment := "NEUTRAL"
+	if h.AI != nil {
+		sentiment = h.AI.AnalyzeSentiment(req.Comment)
 	}
 
+	// 6. Create Feedback Object
+	feedback := &store.Feedback{
+		EventID:   req.EventID,
+		UserID:    user.ID,
+		Rating:    req.Rating,
+		Comment:   req.Comment,
+		Sentiment: sentiment,
+	}
+
+	// 7. Save to DB
 	if err := h.Repo.AddFeedback(r.Context(), feedback); err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
@@ -481,4 +501,162 @@ func (h *Handler) HandleDownloadCertificate(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", "attachment; filename=certificate.pdf")
 	pdf.Output(w)
+}
+
+func (h *Handler) HandleSelfCheckIn(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if input.Email == "" {
+		http.Error(w, "Email is required", http.StatusBadRequest)
+		return
+	}
+
+	err := h.Repo.SelfCheckInUser(r.Context(), input.Email)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Check-in successful"})
+}
+
+func (h *Handler) HandleChat(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Question string `json:"question"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	events, err := h.Repo.Search(r.Context(), "", "", "")
+	if err != nil {
+		http.Error(w, "DB Error", http.StatusInternalServerError)
+		return
+	}
+
+	var contextData string
+	for _, e := range events {
+		contextData += fmt.Sprintf("- ID: %d, Title: %s, Time: %s, Location: %s, Category: %s\n",
+			e.ID, e.Title, e.StartTime.Format("Jan 02 15:04"), e.Location, e.Category)
+	}
+
+	answer, err := h.AI.ChatWithData(req.Question, contextData)
+	if err != nil {
+		http.Error(w, "AI Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"answer": answer})
+}
+
+func (h *Handler) HandleAddComment(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		EventID int64  `json:"event_id"`
+		Text    string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	comment := &store.Comment{
+		EventID: req.EventID,
+		UserID:  user.ID,
+		Text:    req.Text,
+	}
+
+	if err := h.Repo.AddComment(r.Context(), comment); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return full object with email so UI updates instantly
+	comment.UserEmail = user.Email
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comment)
+}
+
+func (h *Handler) HandleGetComments(w http.ResponseWriter, r *http.Request) {
+	eventID, _ := strconv.ParseInt(r.URL.Query().Get("event_id"), 10, 64)
+
+	comments, err := h.Repo.GetComments(r.Context(), eventID)
+	if err != nil {
+		http.Error(w, "DB Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comments)
+}
+
+// --- PHOTOS ---
+
+func (h *Handler) HandleAddPhoto(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(jwtmiddleware.ContextKey{}).(*validator.ValidatedClaims)
+	user, err := h.UserRepo.GetByOIDCID(r.Context(), claims.RegisteredClaims.Subject)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		EventID int64  `json:"event_id"`
+		URL     string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	photo := &store.Photo{
+		EventID: req.EventID,
+		URL:     req.URL,
+	}
+
+	if err := h.Repo.AddPhoto(r.Context(), photo, user.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(photo)
+}
+
+func (h *Handler) HandleGetPhotos(w http.ResponseWriter, r *http.Request) {
+	eventID, _ := strconv.ParseInt(r.URL.Query().Get("event_id"), 10, 64)
+
+	photos, err := h.Repo.GetPhotos(r.Context(), eventID)
+	if err != nil {
+		http.Error(w, "DB Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(photos)
 }
