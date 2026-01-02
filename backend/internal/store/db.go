@@ -46,6 +46,10 @@ func NewPostgresDB(dsn string) (*sql.DB, error) {
             uploaded_by INT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );`,
+
+		`ALTER TABLE events ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE;`,
+		`ALTER TABLE events ADD COLUMN IF NOT EXISTS custom_fields_schema TEXT DEFAULT '[]';`,
+		`ALTER TABLE events ADD COLUMN IF NOT EXISTS ticket_types_schema TEXT DEFAULT '[]';`,
 	}
 
 	for _, query := range migrations {
