@@ -1,167 +1,141 @@
-import { useEffect, useState, useRef } from "react";
-import { Html5Qrcode } from "html5-qrcode";
-// Removed unused Auth0 import
-// import { useAuth0 } from "@auth0/auth0-react";
+import React, { useState } from 'react';
+import { useZxing } from "react-zxing";
+import { useAuth0 } from "@auth0/auth0-react"; // 👈 Import Auth0 Hook
+import { useToast } from "../context/ToastContext";
 
-interface ScannedData {
-    id: number;
-    title: string;
-}
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
-interface Props {
+interface CheckInScannerProps {
     onClose: () => void;
 }
 
-export default function CheckInScanner({ onClose }: Props) {
-    const [scanResult, setScanResult] = useState<string | null>(null);
-    const [scannedData, setScannedData] = useState<ScannedData | null>(null);
-    const [error, setError] = useState<string>("");
+const CheckInScanner: React.FC<CheckInScannerProps> = ({ onClose }) => {
+    const { getAccessTokenSilently } = useAuth0(); // 👈 Get token from Auth0
+    const { showToast } = useToast();
+    const [lastResult, setLastResult] = useState("");
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [errorMsg, setErrorMsg] = useState("");
 
-    // Refs to track scanner instance and running state
-    const scannerRef = useRef<Html5Qrcode | null>(null);
-    const isRunningRef = useRef<boolean>(false);
+    // Setup the Camera
+    const { ref } = useZxing({
+        onResult(result) {
+            console.log("Scanned Raw Data:", result.getText());
+            handleScan(result.getText());
+        },
+        onError(error) {
+            if (error.name === "NotAllowedError") {
+                setErrorMsg("🔒 Camera Permission Denied");
+            } else if (error.name === "NotFoundError") {
+                setErrorMsg("📷 No Camera Device Found");
+            }
+        },
+        constraints: {
+            video: { facingMode: "environment" }
+        }
+    });
 
-    // Removed unused Auth hook
-    // const { getAccessTokenSilently } = useAuth0();
+    const handleScan = async (data: string) => {
+        if (isProcessing || data === lastResult) return;
 
-    useEffect(() => {
-        // 1. Cleanup any existing instance to prevent double-mount issues
-        if (scannerRef.current) {
+        setIsProcessing(true);
+        setLastResult(data);
+        console.log("Processing:", data);
+
+        let eventId = "";
+
+        // Parse format "event:123"
+        if (data.startsWith("event:")) {
+            eventId = data.split(":")[1];
+        } else if (data.includes("/events/")) {
+            const parts = data.split("/");
+            eventId = parts[parts.length - 1];
+        } else {
+            showToast("❌ Invalid QR Format", "error");
+            setIsProcessing(false);
             return;
         }
 
-        const html5QrCode = new Html5Qrcode("reader");
-        scannerRef.current = html5QrCode;
-
-        const config = {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0
-        };
-
-        // 2. Start Scanning
-        const startScanner = async () => {
-            try {
-                await html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    (decodedText) => {
-                        handleScanSuccess(decodedText);
-                    },
-                    (_) => {
-                        // Ignore frame parse errors to keep console clean
-                    }
-                );
-                isRunningRef.current = true;
-            } catch (err) {
-                console.warn("Error starting scanner", err);
-                setError("Camera permission denied or unavailable.");
-            }
-        };
-
-        startScanner();
-
-        // 3. Cleanup on Unmount
-        return () => {
-            if (scannerRef.current && isRunningRef.current) {
-                isRunningRef.current = false;
-                scannerRef.current.stop()
-                    .then(() => {
-                        scannerRef.current?.clear();
-                    })
-                    .catch((err) => {
-                        console.warn("Failed to stop scanner during cleanup", err);
-                    });
-            }
-        };
-    }, []);
-
-    const handleScanSuccess = async (decodedText: string) => {
-        if (scannerRef.current && isRunningRef.current) {
-            isRunningRef.current = false;
-            scannerRef.current.stop().catch((err) => console.warn(err));
-            scannerRef.current.clear();
-        }
-
-        try {
-            const data = JSON.parse(decodedText);
-            if (data.id && data.title) {
-                setScannedData(data);
-                setScanResult("Valid");
-            } else {
-                throw new Error("Invalid Data Structure");
-            }
-        } catch (e) {
-            if (decodedText.startsWith("event:")) {
-                const parts = decodedText.split(":");
-                setScannedData({ id: parseInt(parts[1]), title: "Event #" + parts[1] });
-                setScanResult("Valid");
-            } else {
-                setError("❌ Invalid Ticket Format");
-                setScanResult("Invalid");
-            }
-        }
+        await checkInUser(eventId);
     };
 
-    const handleReset = () => {
-        // Reload is the safest way to reset camera streams across different browsers
-        window.location.reload();
+    const checkInUser = async (eventId: string) => {
+        try {
+            showToast("Checking in...", "success");
+
+            const token = await getAccessTokenSilently();
+
+            const res = await fetch(`${API_URL}/api/events/checkin`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ event_id: Number(eventId) })
+            });
+
+            // 👇 FIX: Get raw text first, then try to parse it as JSON
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text); // Converts '{"message": "Hi"}' -> { message: "Hi" }
+            } catch {
+                data = { message: text }; // Fallback if it's just plain text
+            }
+
+            if (res.ok) {
+                // Now data.message will be just "User checked in successfully"
+                showToast(` ${data.message || "Success!"}`, "success");
+                setTimeout(() => onClose(), 1500);
+            } else {
+                showToast(`⚠️ ${data.message || "Check-in Failed"}`, "error");
+                setTimeout(() => {
+                    setIsProcessing(false);
+                    setLastResult("");
+                }, 2000);
+            }
+        } catch (err) {
+            console.error("Check-in Error:", err);
+            showToast("Connection Error", "error");
+            setIsProcessing(false);
+            setLastResult("");
+        }
     };
 
     return (
-        <div style={{ textAlign: 'center', width: '100%' }}>
-            <h3 style={{ marginBottom: '20px', color: '#1f2937', marginTop: 0 }}>📷 Scan Ticket</h3>
+        <div style={{ textAlign: 'center', background: '#000', borderRadius: '12px', overflow: 'hidden', position: 'relative', minHeight: '320px' }}>
 
-            {!scanResult ? (
-                <div style={{ position: 'relative', width: '100%', minHeight: '300px', background: '#000', borderRadius: '12px', overflow: 'hidden' }}>
-                    {error ? (
-                        <div style={{ color: 'white', padding: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                            {error}
-                        </div>
-                    ) : (
-                        <div id="reader" style={{ width: '100%', height: '100%' }}></div>
-                    )}
+            {errorMsg ? (
+                <div style={{ padding: '50px', color: '#ef4444' }}>
+                    <p style={{ fontSize: '40px' }}>🚫</p>
+                    <h3>{errorMsg}</h3>
+                    <p style={{ fontSize: '12px', color: '#ccc' }}>Check browser permissions.</p>
                 </div>
             ) : (
-                <div style={{
-                    padding: '30px',
-                    background: error ? '#fee2e2' : '#dcfce7',
-                    border: `2px solid ${error ? '#ef4444' : '#22c55e'}`,
-                    borderRadius: '12px',
-                    color: error ? '#991b1b' : '#14532d'
-                }}>
-                    <div style={{ fontSize: '40px', marginBottom: '10px' }}>
-                        {error ? "❌" : "✅"}
-                    </div>
-                    <h2 style={{ margin: 0, fontSize: '24px' }}>
-                        {error ? "Invalid Ticket" : "Verified!"}
-                    </h2>
-
-                    {scannedData && (
-                        <>
-                            <p style={{ margin: '10px 0 0 0', fontSize: '18px', fontWeight: 'bold' }}>
-                                {scannedData.title}
-                            </p>
-                            <p style={{ fontSize: '14px', opacity: 0.8 }}>Event ID: {scannedData.id}</p>
-                        </>
-                    )}
-
-                    <button
-                        onClick={handleReset}
-                        style={{
-                            marginTop: '20px', padding: '10px 20px',
-                            background: error ? '#dc2626' : '#166534', color: 'white', border: 'none',
-                            borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold'
-                        }}
-                    >
-                        Scan Next
-                    </button>
+                <div style={{ position: 'relative', width: '100%', height: '300px' }}>
+                    <video ref={ref} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div style={{
+                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                        width: '200px', height: '200px', border: '4px solid rgba(0, 255, 0, 0.6)', borderRadius: '12px',
+                        boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)'
+                    }}></div>
                 </div>
             )}
 
-            <button onClick={onClose} style={{ marginTop: '20px', background: 'transparent', border: '1px solid #ccc', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', color: '#6b7280' }}>
-                Close Scanner
-            </button>
+            <div style={{ padding: '15px', background: '#111', color: 'white', borderTop: '1px solid #333' }}>
+                {isProcessing ? (
+                    <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>⏳ Verifying...</span>
+                ) : (
+                    <span>Looking for QR Code...</span>
+                )}
+                <button onClick={onClose} style={{
+                    marginTop: '10px', background: '#333', color: 'white', border: 'none',
+                    padding: '8px 24px', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', marginLeft: '10px'
+                }}>
+                    Cancel
+                </button>
+            </div>
         </div>
     );
-}
+};
+
+export default CheckInScanner;

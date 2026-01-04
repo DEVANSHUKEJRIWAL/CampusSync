@@ -2,11 +2,26 @@ import {useEffect, useState} from "react";
 import {useAuth0} from "@auth0/auth0-react";
 import CalendarView from "./CalendarView";
 import {
-    ChevronDownIcon, BellIcon,
-    MapPinIcon, CalendarIcon, UsersIcon, TagIcon, EyeIcon, PencilSquareIcon,
-    MagnifyingGlassIcon, ListBulletIcon, CalendarDaysIcon, FunnelIcon, QrCodeIcon, XMarkIcon,
-    ComputerDesktopIcon, TicketIcon, ClipboardDocumentListIcon, PlusIcon, TrashIcon
-} from '@heroicons/react/20/solid';
+    ChevronDown as ChevronDownIcon,
+    Bell as BellIcon,
+    MapPin as MapPinIcon,
+    Calendar as CalendarIcon,
+    Users as UsersIcon,
+    Tag as TagIcon,
+    Eye as EyeIcon,
+    Pencil as PencilSquareIcon,
+    Search as MagnifyingGlassIcon,
+    List as ListBulletIcon,
+    CalendarRange as CalendarDaysIcon,
+    Filter as FunnelIcon,
+    QrCode as QrCodeIcon,
+    X as XMarkIcon,
+    Monitor as ComputerDesktopIcon,
+    Ticket as TicketIcon,
+    ClipboardList as ClipboardDocumentListIcon,
+    Plus as PlusIcon,
+    Trash2 as TrashIcon
+} from 'lucide-react';
 import {useToast} from "../context/ToastContext";
 import QRCode from "react-qr-code";
 import DatePicker from "react-datepicker";
@@ -56,6 +71,15 @@ interface Notification {
 }
 
 const CATEGORIES = ["General", "Workshop", "Seminar", "Club Meeting", "Social", "Sports"];
+const LOCATIONS = [
+    "Iribe Center",
+    "Hornbake Library",
+    "JM Patterson",
+    "McKeldin Library",
+    "Classrooms",
+    "Stamp Student Union",
+    "Other"
+];
 
 export default function EventDashboard() {
     const { getAccessTokenSilently, user, isAuthenticated } = useAuth0();
@@ -120,7 +144,30 @@ export default function EventDashboard() {
         ticket_types: [] as TicketType[]    // New
     });
 
+    const canManage = userRole === 'Admin' || userRole === 'Organizer';
+
     // --- FETCHERS ---
+
+    // 1. 👇 REFACTORED: Returns true if sync succeeds
+    const syncUser = async () => {
+        if (!user?.email) return false;
+        try {
+            const token = await getAccessTokenSilently();
+            // This endpoint is responsible for Creating the User & assigning "Welcome Badge" in DB
+            const res = await fetch(`${API_URL}/api/users/sync`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
+                body: JSON.stringify({email: user.email, name: user.name, picture: user.picture}),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setUserRole(data.role);
+                return true; // ✅ Sync success
+            }
+        } catch (error) { console.error("Sync failed", error); }
+        return false;
+    };
+
     const fetchLeaderboard = async () => {
         try {
             const token = await getAccessTokenSilently();
@@ -135,24 +182,6 @@ export default function EventDashboard() {
             const res = await fetch(`${API_URL}/api/users/badges`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.ok) setMyBadges(await res.json() || []);
         } catch (e) { console.error(e); }
-    };
-
-    const canManage = userRole === 'Admin' || userRole === 'Organizer';
-
-    const fetchUserProfile = async () => {
-        if (!user?.email) return;
-        try {
-            const token = await getAccessTokenSilently();
-            const res = await fetch(`${API_URL}/api/users/sync`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
-                body: JSON.stringify({email: user.email}),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setUserRole(data.role);
-            }
-        } catch (error) { console.error(error); }
     };
 
     const fetchNotifications = async () => {
@@ -233,16 +262,33 @@ export default function EventDashboard() {
         fetchPhotos(communityModalEvent.id);
     };
 
+    // 2. 👇 NEW: Master Loading Logic (Prevents Race Conditions)
+    const loadUserData = async () => {
+        // Step A: Sync user first. (Wait for Backend to create user/badge)
+        const isSynced = await syncUser();
+
+        if (isSynced) {
+            // Step B: Only fetch data AFTER user is confirmed in DB
+            await Promise.all([
+                fetchMyEvents(),
+                fetchNotifications(),
+                fetchBadges(),      // Now finds the Welcome Badge
+                fetchLeaderboard()  // Now finds the User in the list
+            ]);
+        }
+    };
+
+    // 3. 👇 UPDATED: Single useEffect to rule them all
     useEffect(() => {
+        // Always fetch public events
         fetchEvents("", "", "All");
+
+        // If logged in, trigger the sequence
         if (isAuthenticated && user) {
-            fetchMyEvents();
-            fetchUserProfile();
-            fetchNotifications();
-            fetchBadges();
-            fetchLeaderboard();
+            loadUserData();
         }
     }, [user, isAuthenticated]);
+
 
     // --- NEW LOGIC: Kiosk & Registration ---
 
@@ -318,8 +364,13 @@ export default function EventDashboard() {
             else if (data.status === "WAITLISTED") showToast("Waitlisted.", "success");
 
             setRegisterModalEvent(null);
+
+            // Refresh data
             await fetchMyEvents();
             await fetchEvents(searchQuery, searchLocation, searchCategory);
+            await fetchBadges(); // Refresh badges (in case they got one for joining)
+            await fetchLeaderboard(); // Refresh points
+
         } catch (error: any) { showToast(`Error: ${error.message}`, "error"); }
     };
 
@@ -675,9 +726,21 @@ export default function EventDashboard() {
                         <div className="form-section">
                             <div className="section-title"><MapPinIcon style={{width: '20px', color: '#4f46e5'}}/> Logistics</div>
                             <div className="grid-2">
-                                <div className="input-group grid-full">
+                                <div className="select-wrapper grid-full">
                                     <MapPinIcon className="input-icon"/>
-                                    <input className="input-light" placeholder="Location" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} required/>
+                                    <select
+                                        className="select-light"
+                                        value={formData.location}
+                                        onChange={e => setFormData({...formData, location: e.target.value})}
+                                        required
+                                        style={{paddingLeft: '36px'}} // Add padding so text doesn't overlap icon
+                                    >
+                                        <option value="" disabled>Select Location...</option>
+                                        {LOCATIONS.map(loc => (
+                                            <option key={loc} value={loc}>{loc}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDownIcon className="select-arrow"/>
                                 </div>
                                 <div className="input-group">
                                     <CalendarIcon className="input-icon"/>
@@ -797,13 +860,17 @@ export default function EventDashboard() {
                         </tr>
                         </thead>
                         <tbody>
-                        {leaderboard.map((u, idx) => (
-                            <tr key={u.id} style={{borderBottom: '1px solid #f1f5f9'}}>
-                                <td style={{padding:'10px', fontWeight:'bold'}}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}</td>
-                                <td style={{padding:'10px'}}>{u.email.split('@')[0]}</td>
-                                <td style={{padding:'10px', color:'#4f46e5', fontWeight:'bold'}}>{u.points} pts</td>
-                            </tr>
-                        ))}
+                        {leaderboard.length === 0 ? (
+                            <tr><td colSpan={3} style={{textAlign:'center', padding:'20px', color:'#94a3b8'}}>No data yet.</td></tr>
+                        ) : (
+                            leaderboard.map((u, idx) => (
+                                <tr key={u.id} style={{borderBottom: '1px solid #f1f5f9'}}>
+                                    <td style={{padding:'10px', fontWeight:'bold'}}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}</td>
+                                    <td style={{padding:'10px'}}>{u.email ? u.email.split('@')[0] : 'User'}</td>
+                                    <td style={{padding:'10px', color:'#4f46e5', fontWeight:'bold'}}>{u.points} pts</td>
+                                </tr>
+                            ))
+                        )}
                         </tbody>
                     </table>
                 </div>
@@ -822,6 +889,32 @@ export default function EventDashboard() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px',
+                paddingBottom: '10px',
+                borderBottom: '1px solid var(--border-color, #e2e8f0)'
+            }}>
+                <h2 style={{
+                    margin: 0,
+                    fontSize: '30px',
+                    fontWeight: '800',
+                    color: 'var(--text-main, #1e293b)'
+                }}>
+                    Events
+                </h2>
+                {/* Optional: You can put a 'Create Event' button or Filter here later */}
+                <span style={{
+                    fontSize: '14px',
+                    color: 'var(--text-muted, #64748b)',
+                    fontWeight: '500'
+                }}>
+            {events.length} {events.length === 1 ? 'Event' : 'Events'}
+        </span>
             </div>
 
             <div className="toolbar">
@@ -851,53 +944,75 @@ export default function EventDashboard() {
                 </div>
             </div>
 
+
             {loading ? <p style={{textAlign: 'center', color: '#64748b', padding: '40px'}}>Loading...</p> : (
                 <>
+
                     {viewMode === "LIST" ? (
                         <div className="event-grid">
                             {events.length === 0 && <p style={{gridColumn: '1/-1', textAlign: 'center', color: '#64748b', padding: '40px'}}>No events found.</p>}
                             {events.map((evt) => {
                                 const status = getMyStatus(evt.id);
+                                const isPast = new Date(evt.end_time || evt.start_time) < new Date();
+                                const isFull = !isPast && evt.registered_count >= evt.capacity;
+
                                 return (
                                     <div key={evt.id} className="event-card">
                                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'start'}}>
                                             <div>
-                                                <h4 style={{margin: '0 0 5px 0', fontSize: '18px'}}>{evt.title}</h4>
+                                                <h4 style={{margin: '0 0 5px 0', fontSize: '18px', textDecoration: isPast ? 'none' : 'none'}}>{evt.title}</h4>
                                                 <span className="badge badge-status" style={{background: '#eee', color: '#333'}}>{evt.category || 'General'}</span>
                                                 {evt.is_recurring && <span className="badge" style={{background:'#e0e7ff', color:'#4338ca', marginLeft:'5px'}}>Weekly</span>}
                                             </div>
                                         </div>
                                         <div style={{marginTop: '10px', fontSize: '14px', color: '#555'}}>📍 {evt.location}</div>
                                         <div style={{fontSize: '14px', color: '#555'}}>📅 {new Date(evt.start_time).toLocaleString()}</div>
-                                        <div style={{fontSize: '14px', fontWeight: 'bold', marginTop: '5px', color: evt.registered_count >= evt.capacity ? '#dc2626' : '#16a34a'}}>
+                                        <div style={{fontSize: '14px', fontWeight: 'bold', marginTop: '5px', color: (isFull || isPast) ? '#dc2626' : '#16a34a'}}>
                                             👥 {evt.registered_count} / {evt.capacity} Spots Filled
                                         </div>
                                         <div className="event-badges">
                                             <span className="badge badge-status">{evt.status}</span>
                                             <span className={`badge ${evt.visibility === "PRIVATE" ? "badge-private" : "badge-public"}`}>{evt.visibility === "PRIVATE" ? "Private" : "Public"}</span>
+                                            {isPast && <span className="badge" style={{background: '#dc2626', color: 'white'}}>ENDED</span>}
                                         </div>
+
                                         <div className="card-actions">
-                                            {!status && <button onClick={() => handleJoinClick(evt)} className="btn btn-success">Join</button>}
-                                            {status === 'REGISTERED' && <button onClick={() => handleCancelClick(evt.id)} className="btn btn-danger">Cancel</button>}
-                                            {status === 'WAITLISTED' && <button onClick={() => handleCancelClick(evt.id)} className="btn btn-warning">Leave Waitlist</button>}
+
+                                            {/* --- Primary Action Buttons --- */}
+                                            {isPast ? (
+                                                <button disabled className="btn btn-secondary" style={{cursor: 'not-allowed', opacity: 0.6}}>Event Ended</button>
+                                            ) : (
+                                                <>
+                                                    {!status && !isFull && <button onClick={() => handleJoinClick(evt)} className="btn btn-success">Join</button>}
+                                                    {!status && isFull && <button disabled className="btn btn-secondary" style={{cursor: 'not-allowed', opacity: 0.6}}>Full</button>}
+                                                    {status === 'REGISTERED' && <button onClick={() => handleCancelClick(evt.id)} className="btn btn-danger">Cancel</button>}
+                                                    {status === 'WAITLISTED' && <button onClick={() => handleCancelClick(evt.id)} className="btn btn-warning">Leave Waitlist</button>}
+                                                </>
+                                            )}
+
+                                            {/* --- Admin Only Actions --- */}
                                             {canManage && (
                                                 <>
-                                                    <button onClick={() => handleInviteClick(evt.id)} className="btn btn-secondary">Invite</button>
+                                                    {!isPast && <button onClick={() => handleInviteClick(evt.id)} className="btn btn-secondary">Invite</button>}
                                                     <button onClick={() => handleBulkInvite(evt.id)} className="btn btn-secondary">CSV</button>
                                                     <button onClick={() => { fetchAttendees(evt.id); setSelectedEventId(evt.id); }} className="btn btn-info">Manage</button>
                                                     <button onClick={() => handleEditClick(evt)} className="btn btn-warning">Edit</button>
                                                 </>
                                             )}
-                                            <button onClick={() => setQrModalEvent(evt)} className="btn btn-secondary">QR</button>
 
-                                            {/* ✅ COMMUNITY BUTTON ADDED HERE */}
-                                            <button onClick={() => {
-                                                setCommunityModalEvent(evt);
-                                                setActiveTab("DETAILS");
-                                                fetchComments(evt.id);
-                                                fetchPhotos(evt.id);
-                                                fetchAttendees(evt.id);
-                                            }} className="btn btn-secondary">💬 Community</button>
+                                            {/* --- 👇 UPDATED: QR & Community (Visible only to Registered OR Admin) --- */}
+                                            {(status === 'REGISTERED' || canManage) && (
+                                                <>
+                                                    <button onClick={() => setQrModalEvent(evt)} className="btn btn-secondary">QR</button>
+                                                    <button onClick={() => {
+                                                        setCommunityModalEvent(evt);
+                                                        setActiveTab("DETAILS");
+                                                        fetchComments(evt.id);
+                                                        fetchPhotos(evt.id);
+                                                        fetchAttendees(evt.id);
+                                                    }} className="btn btn-secondary">💬 Community</button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -1063,10 +1178,6 @@ export default function EventDashboard() {
                                 <div>
                                     <p><strong>📍 Location:</strong> {communityModalEvent.location}</p>
                                     <p><strong>📝 Description:</strong> {communityModalEvent.description}</p>
-                                    <div style={{marginTop:'20px'}}>
-                                        <h4>Share Event</h4>
-                                        <QRCode value={`event:${communityModalEvent.id}`} size={120}/>
-                                    </div>
                                 </div>
                             )}
 

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import {
-    PresentationChartLineIcon,
-    ArrowDownTrayIcon,
-    UsersIcon,
-    CheckBadgeIcon,
-    CalendarIcon,
-    TicketIcon,
-    StarIcon
-} from '@heroicons/react/20/solid';
+    LineChart as PresentationChartLineIcon, // Mapped to LineChart
+    Download as ArrowDownTrayIcon,          // Mapped to Download
+    Users as UsersIcon,
+    BadgeCheck as CheckBadgeIcon,           // Mapped to BadgeCheck
+    Calendar as CalendarIcon,
+    Ticket as TicketIcon,
+    Star as StarIcon
+} from 'lucide-react';
 import { useToast } from "../context/ToastContext";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";

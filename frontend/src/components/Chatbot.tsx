@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { ChatBubbleLeftRightIcon, XMarkIcon, PaperAirplaneIcon } from '@heroicons/react/20/solid';
+import {
+    MessageCircle as ChatBubbleLeftRightIcon,
+    X as XMarkIcon,
+    Send as PaperAirplaneIcon
+} from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
