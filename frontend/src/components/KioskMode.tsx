@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { CheckBadgeIcon } from '@heroicons/react/20/solid';
+import {
+    CheckCircle as CheckCircleIcon
+} from 'lucide-react';
 import "./EventDashboard.css"; // Reuse styles
 
 interface Props {
@@ -48,7 +50,7 @@ export default function KioskMode({ eventId, eventTitle, onClose }: Props) {
 
                 {status === "SUCCESS" ? (
                     <div style={{color: '#10b981', animation: 'popIn 0.3s'}}>
-                        <CheckBadgeIcon style={{width: 100, margin: '0 auto'}} />
+                        <CheckCircleIcon style={{width: 100, margin: '0 auto'}} />
                         <h3 style={{fontSize: '2rem', marginTop: '20px'}}>Checked In!</h3>
                         <p>{msg}</p>
                     </div>
