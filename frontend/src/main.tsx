@@ -10,7 +10,7 @@ import {ToastProvider} from "./context/ToastContext.tsx";
 
 const AUTH0_DOMAIN = "cems-terps.us.auth0.com";
 const clientId = "GRzz4LLOFwexYLxoX68zARtCUsNosYP0";
-const audience = "http://localhost:8080";
+const audience = import.meta.env.VITE_AUTH0_AUDIENCE || "http://localhost:8080";
 
 
 
