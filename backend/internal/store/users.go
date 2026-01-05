@@ -36,12 +36,12 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, user *User) error {
 	query := `
-		INSERT INTO users (email, oidc_id, role, created_at, updated_at, is_active)
-		VALUES ($1, $2, $3, $4, $5, true)
-		ON CONFLICT (email) DO UPDATE
-		SET updated_at = $5
-		RETURNING id, role, created_at, updated_at, is_active
-	`
+       INSERT INTO users (email, oidc_id, role, created_at, updated_at, is_active, points)
+       VALUES ($1, $2, $3, $4, $5, true, $6)
+       ON CONFLICT (email) DO UPDATE
+       SET updated_at = $5
+       RETURNING id, role, created_at, updated_at, is_active, points
+    `
 	now := time.Now()
 
 	return r.db.QueryRowContext(ctx, query,
@@ -50,10 +50,12 @@ func (r *UserRepository) Create(ctx context.Context, user *User) error {
 		user.Role,
 		now,
 		now,
+		user.Points,
 	).Scan(
-		&user.ID, &user.Role, &user.CreatedAt, &user.UpdatedAt, &user.IsActive,
+		&user.ID, &user.Role, &user.CreatedAt, &user.UpdatedAt, &user.IsActive, &user.Points,
 	)
 }
+
 func (r *UserRepository) GetByOIDCID(ctx context.Context, oidcID string) (*User, error) {
 	query := `SELECT id, email, oidc_id, role, created_at, updated_at FROM users WHERE oidc_id = $1`
 
@@ -75,6 +77,16 @@ func (r *UserRepository) GetByOIDCID(ctx context.Context, oidcID string) (*User,
 
 func (r *UserRepository) UpdateRole(ctx context.Context, userID int64, role string) error {
 	_, err := r.db.ExecContext(ctx, "UPDATE users SET role=$1, updated_at=NOW() WHERE id=$2", role, userID)
+	return err
+}
+
+func (r *UserRepository) AddBadge(ctx context.Context, userID int64, name, icon string) error {
+	query := `
+        INSERT INTO user_badges (user_id, badge_name, icon, earned_at)
+        VALUES ($1, $2, $3, NOW())
+    `
+
+	_, err := r.db.ExecContext(ctx, query, userID, name, icon)
 	return err
 }
 

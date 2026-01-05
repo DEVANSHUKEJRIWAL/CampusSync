@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	jwtmiddleware "github.com/auth0/go-jwt-middleware/v2"
 
@@ -13,6 +14,13 @@ import (
 
 type Handler struct {
 	Repo *store.UserRepository
+}
+
+type Badge struct {
+	ID       int       `json:"id"`
+	Name     string    `json:"name"`
+	Icon     string    `json:"icon"`
+	EarnedAt time.Time `json:"earned_at"`
 }
 
 func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
@@ -38,24 +46,39 @@ func (h *Handler) HandleSyncUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Check if user already exists
 	existing, err := h.Repo.GetByOIDCID(r.Context(), auth0ID)
 	if err == nil {
+		// User exists -> Return them immediately
 		json.NewEncoder(w).Encode(existing)
 		return
 	}
 
+	// 2. NEW USER DETECTED -> Initialize with Points
 	newUser := &store.User{
 		Email:  req.Email,
 		OIDCID: auth0ID,
 		Role:   "Member",
+		Points: 50, // 👈 Initialize with 50 points
 	}
 
+	// 3. Create User in DB
+	// IMPORTANT: Ensure your store/users.go Create() method actually saves 'Points' to the DB!
 	if err := h.Repo.Create(r.Context(), newUser); err != nil {
 		log.Println("Create user error:", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
+	// 4. Award "Welcome" Badge
+	// Using "Newcomer" as the badge name to match your SQL logic
+	err = h.Repo.AddBadge(r.Context(), newUser.ID, "Newcomer", "👋")
+	if err != nil {
+		// Log the error but do NOT fail the request. The user account is already created.
+		log.Printf("Failed to award welcome badge: %v", err)
+	}
+
+	// 5. Return the new user object
 	json.NewEncoder(w).Encode(newUser)
 }
 
