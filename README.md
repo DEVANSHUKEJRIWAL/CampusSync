@@ -1,4 +1,4 @@
-# CampusSync – Campus Event Management System (CEMS)
+# 🎓 CampusSync – Gamified Campus Event Management
 
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Go](https://img.shields.io/badge/Go-1.22-blue?logo=go)
@@ -6,50 +6,68 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?logo=postgresql)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-CampusSync is a full-stack **Campus Event Management System (CEMS)** that centralizes event discovery, registration, and management for universities. It bundles a modern React frontend, a performant Go backend, and PostgreSQL storage, fully Dockerized for easy local development or demo.
+**CampusSync** is a full-stack, gamified campus event management platform that increases student engagement through points, badges, streaks, and leaderboards.  
+It combines a **React + TypeScript frontend**, a **high-performance Go backend**, and **PostgreSQL**, all fully **Dockerized** for easy local setup and demos.
 
 ---
 
-## Key Features
+## 🚀 Key Features
 
-### 1. Authentication & Security
-- OpenID Connect via **Auth0** (supports Google/GitHub logins)
-- **Role-Based Access Control (RBAC)**: Admin, Organizer, Member
-- **JWT-protected API** endpoints (middleware validation)
+### 🏆 Gamification & Engagement
+- **Points System** – Earn points for registering and attending events
+- **Digital Badges** – Auto-awarded achievements (e.g., *Newcomer*, *Campus Hero*)
+- **Leaderboard** – Real-time campus-wide rankings
+- **Attendance Streaks** – Track consecutive participation
+- **Photo Gallery** – View event highlights
+- **Live Comments** – Discuss events in real time
 
-### 2. Event Management
-- Organizer **CRUD** (Create, Read, Update, Delete) for events
-- **Public** and **Private** event visibility modes
-- Background workers automatically transition event status:
+---
+
+### 📅 Advanced Event Management
+- **Recurring Events** – Daily, weekly, or custom schedules
+- **Custom Registration Fields** – Dynamic questions per event
+- **Ticket Types** – VIP, General Admission, capacity-based tiers
+- **Event Lifecycle Automation** –  
   `UPCOMING → IN_PROGRESS → COMPLETED`
-
-### 3. Registration Engine
-- Enforced **capacity** using DB transactions
-- **Waitlist** with automatic promotion on cancellations
-- **Conflict detection** to prevent double-booking
-- Mocked email notifications on promotions/cancellations
-
-### 4. Organizer Tools
-- View registered and waitlisted attendees
-- **CSV export** of attendee lists
-- **Bulk CSV invitations** and manual invites by email
-
-### 5. UX
-- **List view** and **Calendar view** (monthly/weekly)
-- Real-time **search & filter**
-- **My Schedule** dashboard for registered users
+- **Visibility Controls** – Public or invite-only events
 
 ---
 
-## Tech Stack
+### 🎟️ Registration & Check-in
+- **QR Code Tickets** – Unique QR per registration
+- **Kiosk Mode** – Real-time QR scanning for organizers
+- **Waitlist Engine** – Auto-promotion when slots open
+- **Conflict Detection** – Prevents overlapping registrations
+
+---
+
+### 📊 Organizer Dashboard & Analytics
+- **Live Analytics** – Registrations, attendance %, engagement
+- **Attendee Management** – View & export CSVs
+- **Bulk Invites** – Upload via CSV or email lists
+- **Feedback System** – Ratings and post-event reviews
+
+---
+
+### 🔐 Authentication & Security
+- **OpenID Connect (Auth0)** – Google & GitHub login
+- **RBAC (Role-Based Access Control)**:
+  - **Admin** – Full system control & analytics
+  - **Organizer** – Create events, manage check-ins
+  - **Member** – Register, attend, earn rewards
+
+---
+
+## 🧱 Tech Stack
 
 | Layer | Technology |
-|---|---|
-| Frontend | React, TypeScript, Vite, React Big Calendar |
-| Backend | Go 1.22, `net/http`, `lib/pq` |
+|------|------------|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Backend | Go 1.22, Gin, `lib/pq` |
 | Database | PostgreSQL 15 |
+| Auth | Auth0 (OIDC) |
 | Infra | Docker, Docker Compose |
-| Auth | Auth0 (OpenID Connect) |
+| Deployment | Render (Backend), Vercel (Frontend) |
 
 ---
 
@@ -60,128 +78,124 @@ CampusSync is a full-stack **Campus Event Management System (CEMS)** that centra
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-### Auth0
-#### Create an Auth0 Application and set the following values in the frontend and backend.
-```
-Go to https://manage.auth0.com
-Applications → Applications → Create Application
-Type: Single Page Web Application
-Stack/Framework: React (doesn’t matter, just means SPA).
-```
-#### Create Auth0 API
-```
-You need this so the backend can verify tokens.
-Auth0 → Applications → APIs
-Create API
-Give it:
-Name: CEMS API
-Identifier: http://localhost:8080
-Signing Algorithm: RS256
-Save.
-```
-Find the domain(YOUR_AUTH0_DOMAIN) and clientID(YOUR_CLIENT_ID) on the Application → Settings
+### 🔐 Auth0 Setup
 
-**Frontend** — `frontend/src/main.tsx`:
+1. Create a **Single Page Application**
+2. Create an **API**
+   - Identifier: `http://localhost:8080`
+3. Copy **Domain**, **Client ID**, and **Audience**
+
+#### Frontend (`frontend/src/main.tsx`)
 ```ts
 const domain = "YOUR_AUTH0_DOMAIN";
 const clientId = "YOUR_CLIENT_ID";
 const audience = "http://localhost:8080";
-```
 
-**Backend** — `backend/cmd/api/main.go`:
-```ts
+Backend (backend/cmd/api/main.go)
+
 auth0Domain := "YOUR_AUTH0_DOMAIN"
 auth0Audience := "http://localhost:8080"
-```
----
 
-## Setup Instructions
-This project is fully Dockerized for easy setup.
 
-### 1. Clone the Repository
+⸻
 
-```Bash
+🛠️ Setup Instructions
+
+1. Clone the Repository
+
 git clone <repository-url>
 cd CampusSync
-```
-### 2. Start the Application  
-Run the following command in the root directory:
-```Bash
+
+
+⸻
+
+2. Start the Application
+
 docker-compose up --build
-```
-This will build the Go Backend, the React Frontend, and spin up the PostgreSQL database.
 
-### 3. Database Setup (Required Before First Login)  
-This app does not create database tables automatically. You must import the SQL schema after the database container is running.
+This spins up:
+	•	Go backend
+	•	React frontend
+	•	PostgreSQL database
 
-Run the command from the project root:
+⸻
 
-```
+3. Database Migration (Required)
+
+Apply the schema while containers are running:
+
 cat backend/db/migrations/*.sql | docker exec -i cems_db psql -U postgres -d cems
-```
 
-This will apply all migration files in backend/db/migrations and create the required tables (e.g., users, events, etc.).  
+⸻
 
-**Only run this once, unless you reset your Docker volume.**
+4. Access the App
 
-
-### 4. Access the App
-Open your browser and navigate to:  
 http://localhost:5173
 
-### 5. Admin Setup (First Run)  
-By default, all new users are created with the "Member" role. To unlock Organizer/Admin features, you must manually promote your first user via the database.  
 
-- Log in to the app via the browser.  
-- Open a new terminal window.  
-- Run the following command to promote yourself to Admin:
+⸻
 
-```Bash
-docker exec -i cems_db psql -U postgres -d cems -c "UPDATE users SET role='Admin' WHERE email='YOUR_EMAIL@gmail.com';"
-```
-**(Replace YOUR_EMAIL@gmail.com with the email you used to log in).**
+5. Admin Setup (First Run)
 
-- Refresh the browser. You will now see the Admin Console and Create Event options.
+Promote your user to Admin:
 
----
+docker exec -i cems_db psql -U postgres -d cems \
+-c "UPDATE users SET role='Admin', points=50 WHERE email='YOUR_EMAIL@gmail.com';"
 
-## Testing Specific Features
-- Testing the Waitlist.
-- Create an event with Capacity: 1.
-- Register with User A. (Status: Registered).
-- Log in with User B (incognito/different browser) and register. (Status: Waitlisted).
-- As User A, cancel your registration.
-- User B will automatically be promoted to Registered. Check the backend logs for the email notification.
-- Testing Private Events.
-- Create an event with Visibility: Private.
-- Try to join as a normal user (Access Denied).
-- As the organizer, use the Invite or Bulk CSV button to invite the user's email.
-- Try to join again (Success).
 
----
-```
-Project Structure
+⸻
+
+🧪 Feature Testing
+
+🏅 Gamification
+	1.	Sign up → Automatically receive 50 points + Newcomer badge
+	2.	Attend an event → +10 points
+	3.	Check leaderboard updates live
+
+⸻
+
+📱 Kiosk Mode
+	1.	Login as Admin / Organizer
+	2.	Open event → Launch Kiosk Mode
+	3.	Scan attendee QR codes
+	4.	Status updates instantly
+
+⸻
+
+🗓️ Waitlist Flow
+	1.	Event capacity = 1
+	2.	User A registers → Registered
+	3.	User B registers → Waitlisted
+	4.	User A cancels → User B auto-promoted
+
+⸻
+
+📁 Project Structure
+
 CampusSync/
 ├── backend/
-│   ├── cmd/api/main.go       # Application Entrypoint
+│   ├── cmd/api/            # App entrypoint
 │   ├── internal/
-│   │   ├── auth/             # JWT Middleware & CORS
-│   │   ├── background/       # Background Status Updater
-│   │   ├── events/           # Event Logic & Handlers
-│   │   ├── registration/     # Waitlist & Registration Logic
-│   │   ├── store/            # Database Repositories (SQL)
-│   │   └── notifications/    # Mock Email Service
-│   ├── db/migrations/        # SQL Schema Definitions
+│   │   ├── auth/           # JWT & RBAC middleware
+│   │   ├── events/         # Events, kiosk, analytics
+│   │   ├── users/          # Gamification logic
+│   │   ├── registration/   # QR codes & waitlist engine
+│   │   └── store/          # SQL repositories
+│   ├── db/migrations/      # Database schema
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── components/       # UI Components (EventDashboard, CalendarView)
-│   │   ├── context/          # Global Contexts (Toast)
-│   │   ├── App.tsx           # Main Layout & Auth Logic
-│   │   └── main.tsx          # Auth0 Provider Setup
+│   │   ├── components/     # Dashboards, Kiosk, Leaderboard
+│   │   ├── context/        # Toast & global state
+│   │   └── main.tsx        # Auth0 provider
 │   └── Dockerfile
-├── docker-compose.yml        # Container Orchestration
-└── README.md
-```
+└── docker-compose.yml
+
+
+⸻
+
+📜 License
+
+This project is licensed under the MIT License.
